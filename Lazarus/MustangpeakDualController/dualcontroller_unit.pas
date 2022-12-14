@@ -244,18 +244,6 @@ type
     procedure OnControllerReqestTakeover1(Sender: TLccTrainController; var Allow: Boolean);
     procedure OnControllerReqestTakeover2(Sender: TLccTrainController; var Allow: Boolean);
 
- //   procedure OnControllerSearchResult1(Sender: TLccTrainController; TrainList: TLccActionTrainInfoList; var SelectedResultIndex: Integer);
- //   procedure OnControllerSearchResult2(Sender: TLccTrainController; TrainList: TLccActionTrainInfoList; var SelectedResultIndex: Integer);
-
- //   procedure OnControllerSearchMultiResult1(Sender: TLccTrainController; Trains: TLccActionTrainInfoList);
-  //  procedure OnControllerSearchMultiResult2(Sender: TLccTrainController; Trains: TLccActionTrainInfoList);
-
- //   procedure OnControllerAttachListenerReply1(Sender: TLccTrainController; Listener: TLccActionTrainInfo; ReplyCode: Word);
- //   procedure OnControllerAttachListenerReply2(Sender: TLccTrainController; Listener: TLccActionTrainInfo; ReplyCode: Word);
-
-//    procedure OnControllerDetachListenerReply1(Sender: TLccTrainController; Listener: TLccActionTrainInfo; ReplyCode: Word);
- //   procedure OnControllerDetachListenerReply2(Sender: TLccTrainController; Listener: TLccActionTrainInfo; ReplyCode: Word);
-
     procedure OnControllerQueryListenerGetCount1(Sender: TLccTrainController; ListenerCount: Byte);
     procedure OnControllerQueryListenerGetCount2(Sender: TLccTrainController; ListenerCount: Byte);
 
@@ -266,7 +254,7 @@ type
     procedure ReleaseTrain2;
 
     procedure OnAliasMappingChange(Sender: TObject; LccSourceNode: TLccNode; AnAliasMapping: TLccAliasMapping; IsMapped: Boolean);
-    procedure OnTrainRegisteringChange(Sender: TObject; LccSourceNode: TLccNode; TrainObject: TLccTrainObject; IsRegistered: Boolean);
+    procedure OnTractionRegisterChange(TractionServer: TLccTractionServer; LccNode: TObject; TractionObject: TLccTractionObject; IsRegistered: Boolean);
 
     procedure OnLccTractionUpdateSNIP1(Sender: TObject; LccSourceNode: TLccNode; Index: Integer);
     procedure OnLccTractionUpdateTrainSNIP1(Sender: TObject; LccSourceNode: TLccNode; Index: Integer);
@@ -421,8 +409,8 @@ begin
   NodeManager1 := TLccNodeManager.Create(nil, True);
   ClientServer1 := TLccEthernetClient.Create(nil, NodeManager1);
 
-  NodeManager1.OnLccNodeAliasIDChanged := @OnNodeManager1AliasChange;
-  NodeManager1.OnLccNodeIDChanged := @OnNodeManager1IDChange;
+  NodeManager1.OnNodeAliasIDChanged := @OnNodeManager1AliasChange;
+  NodeManager1.OnNodeIDChanged := @OnNodeManager1IDChange;
 
   ClientServer1.OnConnectionStateChange := @OnClientServer1ConnectionChange;
   ClientServer1.OnErrorMessage := @OnClientServer1ErrorMessage;
@@ -430,20 +418,19 @@ begin
   NodeManager2 := TLccNodeManager.Create(nil, True);
   ClientServer2 := TLccEthernetClient.Create(nil, NodeManager2);
 
-  NodeManager2.OnLccNodeAliasIDChanged := @OnNodeManager2AliasChange;
-  NodeManager2.OnLccNodeIDChanged := @OnNodeManager2IDChange;
+  NodeManager2.OnNodeAliasIDChanged := @OnNodeManager2AliasChange;
+  NodeManager2.OnNodeIDChanged := @OnNodeManager2IDChange;
 
-  NodeManager1.OnLccMessageReceive := @OnNodeManagerReceiveMessage1;
-  NodeManager1.OnLccMessageSend := @OnNodeManagerSendMessage1;
+  ClientServer1.OnLccMessageReceive := @OnNodeManagerReceiveMessage1;
+  ClientServer1.OnLccMessageSend := @OnNodeManagerSendMessage1;
 
-  NodeManager2.OnLccMessageReceive := @OnNodeManagerReceiveMessage2;
-  NodeManager2.OnLccMessageSend := @OnNodeManagerSendMessage2;
+  ClientServer2.OnLccMessageReceive := @OnNodeManagerReceiveMessage2;
+  ClientServer2.OnLccMessageSend := @OnNodeManagerSendMessage2;
 
   ClientServer2.OnConnectionStateChange := @OnClientServer2ConnectionChange;
   ClientServer2.OnErrorMessage := @OnClientServer2ErrorMessage;
 
   NodeManager1.OnAliasMappingChange := @OnAliasMappingChange;
-  NodeManager1.OnTrainRegisteringChange := @OnTrainRegisteringChange;
 
   PageControlThrottle1.Enabled := False;
   PageControlThrottle2.Enabled := False;
@@ -760,7 +747,13 @@ begin
       begin
         ButtonConnect1.Caption := 'Disconnect';
         StatusBarThrottle1.Panels[0].Text := 'IP Address: ' + (Info as TLccEthernetConnectionInfo).ClientIP + ':' + IntToStr((Info as TLccEthernetConnectionInfo).ClientPort);
-        ControllerNode1 := NodeManager1.AddNodeByClass('', TLccTrainController, True, NULL_NODE_ID) as TLccTrainController;
+        if NodeManager1.Nodes.Count = 0 then
+          ControllerNode1 := NodeManager1.AddNodeByClass('', TLccTrainController, True, NULL_NODE_ID) as TLccTrainController;
+        if Assigned(ControllerNode1) then
+        begin
+          ControllerNode1. TractionServer.OnRegisterChange := @OnTractionRegisterChange
+
+        end;
    {     ControllerNode1.OnTrainAssigned := @ControllerTrainAssigned1;
         ControllerNode1.OnTrainReleased := @ControllerTrainReleased1;
         ControllerNode1.OnControllerRequestTakeover := @OnControllerReqestTakeover1;
@@ -778,10 +771,8 @@ begin
     lcsDisconnecting :
       begin
         StatusBarThrottle1.Panels[0].Text := 'Disconnecting';
-        NodeManager1.Clear;
         FormServerInfo.TreeViewAliasMaps.Items.Clear;
         FormServerInfo.TreeViewTrains.Items.Clear;
-        ControllerNode1 := nil;
       end;
     lcsDisconnected :
       begin
@@ -812,26 +803,17 @@ begin
         begin
           ButtonConnect2.Caption := 'Disconnect';
           StatusBarThrottle2.Panels[0].Text := 'IP Address: ' + (Info as TLccEthernetConnectionInfo).ClientIP + ':' + IntToStr((Info as TLccEthernetConnectionInfo).ClientPort);
-          ControllerNode2 := NodeManager2.AddNodeByClass('', TLccTrainController, True, NULL_NODE_ID) as TLccTrainController;
-   {       ControllerNode2.OnTrainAssigned := @ControllerTrainAssigned2;
-          ControllerNode2.OnTrainReleased := @ControllerTrainReleased2;
-          ControllerNode2.OnControllerRequestTakeover := @OnControllerReqestTakeover2;
-          ControllerNode2.OnQuerySpeedReply := @OnControllerQuerySpeedReply2;
-          ControllerNode2.OnQueryFunctionReply := @OnControllerQueryFunctionReply2;
-          ControllerNode2.OnSearchResult := @OnControllerSearchResult2;
-          ControllerNode2.OnSearchMultiResult := @OnControllerSearchMultiResult2;
-          ControllerNode2.OnAttachListenerReply:= @OnControllerAttachListenerReply2;
-          ControllerNode2.OnDetachListenerReply := @OnControllerDetachListenerReply2;
-          ControllerNode2.OnQueryListenerGetCount := @OnControllerQueryListenerGetCount2;
-          ControllerNode2.OnQueryListenerIndex := @OnControllerQueryListenerIndex2;
-          ControllerNode2.OnQueryConfigurationReply := @OnQueryConfigurationReply2;        }
+          if NodeManager2.Nodes.Count = 0 then
+            ControllerNode2 := NodeManager2.AddNodeByClass('', TLccTrainController, True, NULL_NODE_ID) as TLccTrainController;
+          if Assigned(NodeManager1) then
+          begin
+            ControllerNode2.TractionServer.OnRegisterChange := @OnTractionRegisterChange
+          end;
           PageControlThrottle2.Enabled := True;
         end;
       lcsDisconnecting :
         begin
           StatusBarThrottle2.Panels[0].Text := 'Disconnecting';
-          NodeManager2.Clear;
-          ControllerNode2 := nil;
         end;
       lcsDisconnected :
         begin
@@ -1141,13 +1123,12 @@ begin
     FormServerInfo.RemoveAliasMap(AnAliasMapping);
 end;
 
-procedure TForm1.OnTrainRegisteringChange(Sender: TObject;
-  LccSourceNode: TLccNode; TrainObject: TLccTrainObject; IsRegistered: Boolean);
+procedure TForm1.OnTractionRegisterChange(TractionServer: TLccTractionServer; LccNode: TObject; TractionObject: TLccTractionObject; IsRegistered: Boolean);
 begin
   if IsRegistered then
-    FormServerInfo.AddTrainObject(TrainObject)
+    FormServerInfo.AddTrainObject(TractionObject)
   else
-    FormServerInfo.RemoveTrainObject(TrainObject);
+    FormServerInfo.RemoveTrainObject(TractionObject);
 end;
 
 procedure TForm1.OnLccTractionUpdateSNIP1(Sender: TObject;

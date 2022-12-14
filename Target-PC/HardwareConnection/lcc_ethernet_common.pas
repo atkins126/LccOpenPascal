@@ -81,10 +81,7 @@ type
     procedure OnErrorMessageReceive; virtual;
     procedure RequestErrorMessageSent; override;
 
-    procedure TryTransmitGridConnect(IOHandler: TIdIOHandler); virtual;
-    procedure TryTransmitTCPProtocol(IOHandler: TIdIOHandler); virtual;
-    procedure TryReceiveGridConnect(AString: String; AGridConnectHelper: TGridConnectHelper); virtual;
-    procedure TryReceiveTCPProtocol(AString: String); virtual;
+    procedure AddToOutgoingBuffer(AMessage: TLccMessage);
 
   public
     constructor Create(CreateSuspended: Boolean; AnOwner: TLccHardwareConnectionManager; AConnectionInfo: TLccHardwareConnectionInfo); override;
@@ -185,106 +182,44 @@ begin
 end;
 
 procedure TLccBaseEthernetThread.RequestErrorMessageSent;
-var
-  i: Integer;
+//var
+ // i: Integer;
+ // List: TList;
 begin
   inherited RequestErrorMessageSent;
 
-  // WE DONT KNOW IF THIS WAS ADDRESSED US SO WE CANT JUST BLINDLY SEND THE ERROR RESULT.....
+ { // WE DONT KNOW IF THIS WAS ADDRESSED US SO WE CANT JUST BLINDLY SEND THE ERROR RESULT.....
 
-  i := 0;
-  while i < Owner.NodeManager.Nodes.Count do
-  begin
-    if EqualNode(Owner.NodeManager.Node[i].NodeID, Owner.NodeManager.Node[i].AliasID, WorkerMessage.SourceID, WorkerMessage.CAN.SourceAlias, True) then
-    begin
-      Owner.NodeManager.SendMessage(Self, WorkerMessage);
-      Break;
-    end;
-    Inc(i);
-  end;
-end;
-
-procedure TLccBaseEthernetThread.TryTransmitGridConnect(IOHandler: TIdIOHandler);
-var
-  TxStr: string;
-  TxList: TStringList;
-  i: Integer;
-begin
-  if Assigned(IOHandler) then
-  begin
-    TxStr := '';
-    TxList := OutgoingGridConnect.LockList;
-    try
-      for i := 0 to TxList.Count - 1 do
-        TxStr := TxStr + TxList[i] + #10;
-      TxList.Clear;
-    finally
-      OutgoingGridConnect.UnlockList;
-    end;
-
-    if TxStr <> '' then
-      IOHandler.WriteLn(TxStr);  // I think an exception is fired and we drop out in the main thread if we fail here
-  end;
-end;
-
-procedure TLccBaseEthernetThread.TryTransmitTCPProtocol(IOHandler: TIdIOHandler);
-var
-  DynamicByteArray: TLccDynamicByteArray;
-begin
-  DynamicByteArray := nil;
-  OutgoingCircularArray.LockArray;
+  List := Owner.NodeManager.Nodes.LockList;
   try
-    if OutgoingCircularArray.Count > 0 then
-      OutgoingCircularArray.PullArray(DynamicByteArray);
-  finally
-    OutgoingCircularArray.UnLockArray;
-  end;
-
-  if Length(DynamicByteArray) > 0 then
-  begin
-
-
-  end;
-end;
-
-procedure TLccBaseEthernetThread.TryReceiveGridConnect(AString: String;
-  AGridConnectHelper: TGridConnectHelper);
-var
-  GridConnectStrPtr: PGridConnectString;
-  MessageStr: String;
-  i: Integer;
-begin
-  GridConnectStrPtr := nil;
-
-  for i := 1 to Length(AString) do
-  begin
-    if AGridConnectHelper.GridConnect_DecodeMachine(Ord( AString[i]), GridConnectStrPtr) then
+    i := 0;
+    while i < List.Count do
     begin
-      MessageStr := GridConnectBufferToString(GridConnectStrPtr^);
-      TryReceiveWorkerMessage.LoadByGridConnectStr(MessageStr);
-
-      case GridConnectMessageAssembler.IncomingMessageGridConnect(TryReceiveWorkerMessage) of
-        imgcr_True :
-          begin
-            Synchronize({$IFDEF FPC}@{$ENDIF}Owner.ReceiveMessage)
-          end;
-        imgcr_ErrorToSend :
-          begin
-        //    ConnectionInfo.LccMessage.CopyToTarget(WorkerMessage);
-        //    Synchronize({$IFDEF FPC}@{$ENDIF}RequestErrorMessageSent);
-          end;
-        imgcr_False,
-        imgcr_UnknownError : begin end;
+      if EqualNode(Owner.NodeManager.Node[i].NodeID, Owner.NodeManager.Node[i].AliasID, WorkerMessage.SourceID, WorkerMessage.CAN.SourceAlias, True) then
+      begin
+        Owner.NodeManager.SendMessage(Self, WorkerMessage);
+        Break;
       end;
+      Inc(i);
     end;
+  finally
+    Owner.NodeManager.Nodes.UnlockList;
+  end;   }
+end;
+
+procedure TLccBaseEthernetThread.AddToOutgoingBuffer(AMessage: TLccMessage);
+var
+  LocalChunk: TLccDynamicByteArray;
+begin
+  if (ConnectionInfo as TLccEthernetConnectionInfo).GridConnect then
+    OutgoingGridConnect.Add(AMessage.ConvertToGridConnectStr(#10, False))
+  else begin
+    LocalChunk := nil;
+    if AMessage.ConvertToLccTcp(LocalChunk) then
+      OutgoingCircularArray.AddChunk(LocalChunk);
   end;
 end;
 
-procedure TLccBaseEthernetThread.TryReceiveTCPProtocol(AString: String);
-begin
- // if TcpDecodeStateMachine.OPStackcoreTcp_DecodeMachine(RcvByte, ConnectionInfo.MessageArray) then
-//    Synchronize({$IFDEF FPC}@{$ENDIF}ReceiveMessage)
-end;
 
 constructor TLccBaseEthernetThread.Create(CreateSuspended: Boolean; AnOwner: TLccHardwareConnectionManager; AConnectionInfo: TLccHardwareConnectionInfo);
 begin

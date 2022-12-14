@@ -22,6 +22,13 @@ uses
   SysUtils;
 
 const
+  TIMEOUT_RECIEVE_THREAD = 20;             // 20ms sleep time
+  TIMEOUT_CONTROLLER_NOTIFY_WAIT = 2000;   // milliseconds   How long we wait for the Notified message to come from the currently assigned Controller
+  TIMEOUT_UNVALIDATED_MESSAGE_COUNT = 2000 div TIMEOUT_RECIEVE_THREAD;  // can Live 2 seconds before giving up
+  TIMEOUT_NODE_IDENTIFICTION_OBJECT_COUNT = TIMEOUT_UNVALIDATED_MESSAGE_COUNT * 2; // These need to live longer than the messages that created them
+ // TIMEOUT_VERIFYNODE_SENDMESSAGE_WAIT = (TIMOUT_UNVALIDATEED_MESSAGE_WAIT div 2) + 10; // milliseconds.  How long we hold the TLccNodeIdentificationObject to send another VerifyNode message; NOTE this gets reset to 0 at TIMOUT_UNVALIDATEED_MESSAGE_WAIT div 2 for a second message send attempt
+
+const
   PATH_OSX_RESOURCES = 'Contents/Resources/';
   PATH_OSX_EXECUTABLE = 'Contents/MacOS/';
   PATH_UNIX_APPLICATION = '/usr/share/';    // Typical place to store the application foldler
@@ -418,11 +425,11 @@ const
   TRACTION_LISTENER_DETACH            = $02;
   TRACTION_LISTENER_QUERY             = $03;
 
-  TRACTION_LISTENER_FLAG_ALIAS_VALID  = $01;   // Depreciated, Aliases are not portable across ethernet bridges.  Alias parameter no longer used
-  TRACTION_LISTENER_FLAG_REVERSE_DIR  = $02;
-  TRACTION_LISTENER_FLAG_LINK_F0      = $04;   // Pass forward the F0 function
-  TRACTION_LISTENER_FLAG_LINK_FN      = $08;   // Pass forward all functions
-  TRACTION_LISTENER_FLAG_HIDDEN       = $10;   // Listener is hidden (not shown in UI).  I think is should be defined as "non-Train" Listener
+  TRACTION_LISTENER_FLAG_ALIAS_VALID  = $0001;   // Depreciated, Aliases are not portable across ethernet bridges.  Alias parameter no longer used
+  TRACTION_LISTENER_FLAG_REVERSE_DIR  = $0002;   // Reverse Direction
+  TRACTION_LISTENER_FLAG_LINK_F0      = $0004;   // Pass forward the F0 function
+  TRACTION_LISTENER_FLAG_LINK_FN      = $0008;   // Pass forward all functions
+  TRACTION_LISTENER_FLAG_HIDDEN       = $0080;   // Listener is hidden (not shown in UI).  I think is should be defined as "non-Train" Listener
 
   TRACTION_LISTENER_ATTACH_REPLY_OK               = $0000;
   TRACTION_LISTENER_ATTACH_REPLY_NOTFOUND         = $1030;

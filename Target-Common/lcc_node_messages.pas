@@ -69,22 +69,6 @@ type
     property Valid: Boolean read FValid write FValid;
   end;
 
-  { TLccTheadMessageList }
-
-  TLccTheadMessageList = class(TThreadList)
-  private
-    function GetInteger: Integer;
-    function GetLccMessage(Index: Integer): TLccMessage;
-  public
-    property Count: Integer read GetInteger;
-    property LccMessage[Index: Integer]: TLccMessage read GetLccMessage;
-
-    destructor Destroy; override;
-    procedure Push(AMessage: TLccMessage);
-    procedure Clear;
-    function Pop: TLccMessage;
-  end;
-
   // Base struture that contains the two types of LCC node identifiers, the long
   // globally unique ID or NodeID and the local Alias (if running CAN/Gridconnect)
 
@@ -95,17 +79,20 @@ type
     FActive: Boolean;
     FAlias: Word;
     FNodeID: TNodeID;
+    FAbandonCount: Integer;
   public
     property NodeID: TNodeID read FNodeID write FNodeID;
     property Alias: Word read FAlias write FAlias;
     property Active: Boolean read FActive write FActive;
+    property AbandonCount: Integer read FAbandonCount write FAbandonCount;
 
     procedure AssignID(ANodeID: TNodeID; AnAlias: Word);
+    function Clone: TLccNodeIdentificationObject;
     function Compare(TestObject: TLccNodeIdentificationObject): Boolean; overload;
     function Compare(TestMapping: TLccAliasMapping): Boolean overload;
     function CompareEitherOr(TestObject: TLccNodeIdentificationObject): Boolean; overload;
     function CompareEitherOr(TestMapping: TLccAliasMapping): Boolean; overload;
-    function Valid: Boolean;
+    function Valid: Boolean;  // Valid means one or the other is non zero, not that is is mapped
   end;
 
 
@@ -121,7 +108,7 @@ type
     function GetSource: TLccNodeIdentificationObject;
     procedure SetIdentification(Index: Integer; AValue: TLccNodeIdentificationObject);
   public
-    property NodeIdentification[Index: Integer]: TLccNodeIdentificationObject read GetIdentification write SetIdentification;
+    property NodeIdentification[Index: Integer]: TLccNodeIdentificationObject read GetIdentification write SetIdentification; default;
     property Source: TLccNodeIdentificationObject read GetSource;
     property Destination: TLccNodeIdentificationObject read GetDestination;
 
@@ -132,7 +119,8 @@ type
     // Returns true if all the Identifications have been filled in or are not active anyway
     function IdentificationsValid: Boolean;
     // Tests if the passed Identification is already in the list
-    function IsDuplicate(DestinationObject: TLccNodeIdentificationObject): Boolean;
+    function IsDuplicate(DestinationObject: TLccNodeIdentificationObject): Boolean; overload;
+    function IsDuplicate(ANodeID: TNodeID; AnAlias: Word): Boolean; overload;
     // Updates the list with the new mapping that is passed
     function ProcessNewMapping(NewMapping: TLccAliasMapping): Boolean;
     // Removes any Identification objects that match the mapping
@@ -143,60 +131,8 @@ type
     function LogOut(AnAlias: Word): Boolean;
     // Adds and sets the properities of a TLccNodeIdentificationObject
     function AddNodeIdentificationObject(ANodeID: TNodeID; AnAlias: Word): TLccNodeIdentificationObject;
-  end;
-
-
-  // Structure storing the Message with all the Node Identification for the nodes that this message references
-
-   { TLccMessageWithNodeIdentification }
-
-  TLccMessageWithNodeIdentification = class
-  private
-    FLccMessageNodeIdentifications: TLccNodeIdentificationObjectList; // All the different Identification structures for the Nodes that this message requires to complete
-    FLccMessage: TLccMessage;                                        // Message stored
-  public
-    property LccMessage: TLccMessage read FLccMessage write FLccMessage;
-    property MessageNodeIdentifications: TLccNodeIdentificationObjectList read FLccMessageNodeIdentifications write FLccMessageNodeIdentifications;
-
-    constructor Create;
-    destructor Destroy; override;
-    procedure CloneMessageAndCreateIdentificationObjects(AMessage: TLccMessage);
-    procedure NewIdentificationItem(ANodeID: TNodeID);
-    function LogOut(AnAlias: Word): Boolean;
-  end;
-
-
-  // Structure with a list of objects that define the message and the Node Identification for the nodes that this message references
-  { TLccMessageWithNodeIdentificationList }
-
-  TLccMessageWithNodeIdentificationList = class(TList)
-  private
-    FSourceAlias: Word;
-    function GetLccMessageIdentification(Index: Integer): TLccMessageWithNodeIdentification;
-    procedure SetLccMessageIdentification(Index: Integer; AValue: TLccMessageWithNodeIdentification);
-  public
-    property LccMessageIdentification[Index: Integer]: TLccMessageWithNodeIdentification read GetLccMessageIdentification write SetLccMessageIdentification; default;
-    property SourceAlias: Word read FSourceAlias write FSourceAlias;
-
-    procedure Clear; override;
-    function Pop: TLccMessage;
-    function Push(AMessage: TLccMessage): TLccNodeIdentificationObjectList;
-    procedure ProcessNewMapping(AliasMapping: TLccAliasMapping);
-    procedure LogOut(AnAlias: Word);
-  end;
-
-  { TLccMessageStack }
-
-  TLccMessageStack = class(TList)
-  private
-    function GetMessageStack(Index: Integer): TLccMessageWithNodeIdentificationList;
-    procedure SetMessageStack(Index: Integer; AValue: TLccMessageWithNodeIdentificationList);
-  public
-    property MessageStack[Index: Integer]: TLccMessageWithNodeIdentificationList read GetMessageStack write SetMessageStack; default;
-    function Push(AMessage: TLccMessage): TLccNodeIdentificationObjectList;
-    function Pop: TLccMessage;
-    procedure ProcessNewMapping(AliasMapping: TLccAliasMapping);
-    procedure LogOut(AnAlias: Word);
+    //
+    function RetryCountMaxedOut(ATestCount: Integer): Boolean;
   end;
 
 
@@ -222,15 +158,16 @@ type
 
 TLccMessage = class
 private
-  FAbandonTimeout: Integer;                 // If the message is being held for some reason (CAN multi frame assembly, waiting for AME to aquire the Alias, etc) this is used to see how long it has been alive and when to decide it has been abandon and should be freed
+  FAbandonCount: Integer;                 // If the message is being held for some reason (CAN multi frame assembly, waiting for AME to aquire the Alias, etc) this is used to see how long it has been alive and when to decide it has been abandon and should be freed
   FIsCAN: Boolean;                          // The message is a CAN link message which typically needs special handling
   FCAN: TLccCANMessage;
   FDataArray: TLccByteArray;                // The payload of the message (if there is a payload).  This is the full payload that has been already been assembled if we are on a CAN link
   FDataCount: Integer;                      // How many bytes in the DataArray are valid
   FDestID: TNodeID;                         // NodeID of the Destination of a message (typically a node in our NodeManager)
+  FNodeIdentifications: TLccNodeIdentificationObjectList;
   FSourceID: TNodeID;                       // NodeID of the Source of a message
   FMTI: Word;                               // The Actual MTI of the message IF it is not a CAN frame message
-  FRetryAttempts: Integer;                  // If a message returned "Temporary" (like no buffers) this holds how many time it has been retried and defines a give up time to stop resending
+  FRetryAttemptsDatagram: Integer;                  // If a message returned "Temporary" (like no buffers) this holds how many time it has been retried and defines a give up time to stop resending
   function GetHasDestination: Boolean;
   function GetHasDestNodeID: Boolean;
   function GetHasSourceNodeID: Boolean;
@@ -240,7 +177,7 @@ private
 protected
 
 public
-  property AbandonTimeout: Integer read FAbandonTimeout write FAbandonTimeout;
+  property AbandonCount: Integer read FAbandonCount write FAbandonCount;
   property CAN: TLccCANMessage read FCAN write FCAN;
   property DestID: TNodeID read FDestID write FDestID;
   property DataArray: TLccByteArray read FDataArray write FDataArray;
@@ -251,8 +188,9 @@ public
   property HasSourceNodeID: Boolean read GetHasSourceNodeID;
   property IsCAN: Boolean read FIsCAN write FIsCAN;
   property MTI: Word read FMTI write FMTI;
-  property RetryAttempts: Integer read FRetryAttempts write FRetryAttempts;
+  property RetryAttemptsDatagram: Integer read FRetryAttemptsDatagram write FRetryAttemptsDatagram;
   property SourceID: TNodeID read FSourceID write FSourceID;
+  property NodeIdentifications: TLccNodeIdentificationObjectList read FNodeIdentifications write FNodeIdentifications;
 
   constructor Create;
   destructor Destroy; override;
@@ -271,6 +209,7 @@ public
   function ExtractDataBytesAsWord(StartIndex: Integer): Word;
   function ExtractDataBytesAsHex(StartByteIndex, EndByteIndex: Integer): string;
   function DestinationMatchs(TestAliasID: Word; TestNodeID: TNodeID): Boolean;
+  function ExtractNodeIdentifications(ForceEvaluation: Boolean): TLccNodeIdentificationObjectList;
 
   function LoadByGridConnectStr(GridConnectStr: String): Boolean;
   function LoadByLccTcp(var ByteArray: TLccDynamicByteArray): Boolean;
@@ -304,7 +243,8 @@ public
   procedure LoadIdentifyEvents(ASourceID: TNodeID; ASourceAlias: Word);
   procedure LoadPCER(ASourceID: TNodeID; ASourceAlias: Word; AnEvent: TEventID);
   // Traction Control
-  procedure LoadTractionSetSpeed(ASourceID: TNodeID; ASourceAlias: Word; ADestID: TNodeID; ADestAlias: Word; ASpeed: single);
+  procedure LoadTractionSetSpeed(ASourceID: TNodeID; ASourceAlias: Word; ADestID: TNodeID; ADestAlias: Word; ASpeed: single); overload;
+  procedure LoadTractionSetSpeed(ASourceID: TNodeID; ASourceAlias: Word; ADestID: TNodeID; ADestAlias: Word; ASpeed: THalfFloat); overload;
   procedure LoadTractionSetFunction(ASourceID: TNodeID; ASourceAlias: Word; ADestID: TNodeID; ADestAlias: Word; AnAddress: DWord; AValue: Word);
   procedure LoadTractionEStop(ASourceID: TNodeID; ASourceAlias: Word; ADestID: TNodeID; ADestAlias: Word);
   procedure LoadTractionQuerySpeed(ASourceID: TNodeID; ASourceAlias: Word; ADestID: TNodeID; ADestAlias: Word);
@@ -317,7 +257,7 @@ public
   procedure LoadTractionControllerQuery(ASourceID: TNodeID; ASourceAlias: Word; ADestID: TNodeID; ADestAlias: Word);
   procedure LoadTractionControllerQueryReply(ASourceID: TNodeID; ASourceAlias: Word; ADestID: TNodeID; ADestAlias: Word; AControllerID: TNodeID);
   procedure LoadTractionControllerChangingNotify(ASourceID: TNodeID; ASourceAlias: Word; ADestID: TNodeID; ADestAlias: Word; AControllerNodeID: TNodeID);
-  procedure LoadTractionControllerChangedReply(ASourceID: TNodeID; ASourceAlias: Word; ADestID: TNodeID; ADestAlias: Word; Allow: Boolean);
+  procedure LoadTractionControllerChangingReply(ASourceID: TNodeID; ASourceAlias: Word; ADestID: TNodeID; ADestAlias: Word; Allow: Boolean);
   procedure LoadTractionListenerAttach(ASourceID: TNodeID; ASourceAlias: Word; ADestID: TNodeID; ADestAlias: Word; ListenerFlags: Byte; AListenerNodeID: TNodeID);
   procedure LoadTractionListenerAttachReply(ASourceID: TNodeID; ASourceAlias: Word; ADestID: TNodeID; ADestAlias: Word; AListenerNodeID: TNodeID; ReplyCode: Word);
   procedure LoadTractionListenerDetach(ASourceID: TNodeID; ASourceAlias: Word; ADestID: TNodeID; ADestAlias: Word; ListenerFlags: Byte; AListenerNodeID: TNodeID);
@@ -338,6 +278,7 @@ public
   function TractionExtractFunctionValue: Word;
   function TractionExtractControllerAssignResult: Byte;
   function TractionExtractControllerChangedResult: Byte;
+  function TractionExtractControllerNodeID: TNodeID;
   function TractionExtractListenerID: TNodeID;
   function TractionExtractListenerFlags: Byte;
   function TractionExtractListenerIndex: Byte;
@@ -347,7 +288,6 @@ public
   function TractionExtractListenerQueryNodeIDReply: TNodeID;
   function TractionExtractListenerIDReply: TNodeID;
   function TractionExtractListenerCodeReply: Byte;
-
 
   // Traction Search
   class function TractionSearchEncodeSearchString(SearchString: string; TrackProtocolFlags: Byte; var SearchData: DWORD): TSearchEncodeStringError;
@@ -808,76 +748,6 @@ begin
   end;
 end;
 
-{ TLccMessageStack }
-
-function TLccMessageStack.GetMessageStack(Index: Integer): TLccMessageWithNodeIdentificationList;
-begin
-  Result := TLccMessageWithNodeIdentificationList(Items[Index])
-end;
-
-procedure TLccMessageStack.SetMessageStack(Index: Integer; AValue: TLccMessageWithNodeIdentificationList);
-begin
-  if Index < Count then
-  begin
-    TObject(Items[Index]).Free;
-    Items[Index] := AValue
-  end;
-end;
-
-function TLccMessageStack.Push(AMessage: TLccMessage): TLccNodeIdentificationObjectList;
-var
-  i: Integer;
-  NewMessageWithNodeIdentificationList: TLccMessageWithNodeIdentificationList;
-begin
-  Result := nil;
-  for i := 0 to Count - 1 do
-  begin
-    if TLccMessageWithNodeIdentificationList(Items[i]).SourceAlias = AMessage.CAN.SourceAlias then
-    begin
-      Result := TLccMessageWithNodeIdentificationList(Items[i]).Push(AMessage);
-      Break;
-    end;
-  end;
-
-  if not Assigned(Result) then
-  begin
-    NewMessageWithNodeIdentificationList := TLccMessageWithNodeIdentificationList.Create;
-    NewMessageWithNodeIdentificationList.SourceAlias := AMessage.CAN.SourceAlias;
-    Add(NewMessageWithNodeIdentificationList);
-    Result := NewMessageWithNodeIdentificationList.Push(AMessage);
-  end;
-end;
-
-function TLccMessageStack.Pop: TLccMessage;
-var
-  i: Integer;
-
-begin
-  Result := nil;
-  for i := 0 to Count - 1 do
-  begin
-    Result := TLccMessageWithNodeIdentificationList(Items[i]).Pop;
-    if Assigned(Result) then
-      Break
-  end;
-end;
-
-procedure TLccMessageStack.ProcessNewMapping(AliasMapping: TLccAliasMapping);
-var
-  i: Integer;
-begin
-  for i := 0 to Count - 1 do
-    TLccMessageWithNodeIdentificationList(Items[i]).ProcessNewMapping(AliasMapping);
-end;
-
-procedure TLccMessageStack.LogOut(AnAlias: Word);
-var
-  i: Integer;
-begin
-  for i := 0 to Count - 1 do
-    TLccMessageWithNodeIdentificationList(Items[i]).LogOut(AnAlias);
-end;
-
 { TLccNodeIdentificationObject }
 
 procedure TLccNodeIdentificationObject.AssignID(ANodeID: TNodeID; AnAlias: Word);
@@ -885,6 +755,15 @@ begin
   Alias := AnAlias;
   NodeID := ANodeID;
   FActive := True;
+end;
+
+function TLccNodeIdentificationObject.Clone: TLccNodeIdentificationObject;
+begin
+  Result := TLccNodeIdentificationObject.Create;
+  Result.NodeID := NodeID;
+  Result.Alias := Alias;
+  Result.Active := Active;
+  Result.AbandonCount := 0;
 end;
 
 function TLccNodeIdentificationObject.Compare(TestObject: TLccNodeIdentificationObject): Boolean;
@@ -909,112 +788,7 @@ end;
 
 function TLccNodeIdentificationObject.Valid: Boolean;
 begin
-  Result := (Alias <> 0) and ((NodeID[0] <> 0) or (NodeID[1] <> 0))
-end;
-
-{ TLccMessageWithNodeIdentification }
-
-constructor TLccMessageWithNodeIdentification.Create;
-begin
-  FLccMessageNodeIdentifications := TLccNodeIdentificationObjectList.Create;
-end;
-
-destructor TLccMessageWithNodeIdentification.Destroy;
-begin
-  FreeAndNil(FLccMessageNodeIdentifications);
-  FreeAndNil(FLccMessage);
-  inherited Destroy;
-end;
-
-procedure TLccMessageWithNodeIdentification.CloneMessageAndCreateIdentificationObjects
-  (AMessage: TLccMessage);
-var
-  ANodeID: TNodeID;
-begin
-  LccMessage := AMessage.Clone;
-
-  MessageNodeIdentifications.ClearIdentifications;
-  MessageNodeIdentifications.Source.AssignID(AMessage.SourceID, AMessage.CAN.SourceAlias);
-  if AMessage.HasDestination then
-    MessageNodeIdentifications.Destination.AssignID(AMessage.DestID, AMessage.CAN.DestAlias);
-
-  case AMessage.MTI of
-    MTI_TRACTION_REPLY :
-      begin
-        case AMessage.DataArray[0] of
-          TRACTION_CONTROLLER_CONFIG :
-            begin
-              case AMessage.DataArray[1] of
-                TRACTION_CONTROLLER_CONFIG_QUERY :
-                  begin
-                   ANodeID := NULL_NODE_ID;
-                   AMessage.ExtractDataBytesAsNodeID(3, ANodeID);
-                   if not NullNodeID(ANodeID) then    // NULL is valid for no controller assigned
-                     NewIdentificationItem(ANodeID);
-                  end;
-                end
-            end;
-
-           TRACTION_LISTENER :
-             case AMessage.DataArray[1] of
-                TRACTION_LISTENER_ATTACH,
-                TRACTION_LISTENER_DETACH :
-                  begin
-                    ANodeID := NULL_NODE_ID;
-                    AMessage.ExtractDataBytesAsNodeID(2, ANodeID);
-                    NewIdentificationItem(ANodeID);
-                  end;
-              end;
-        end;
-      end;
-    MTI_TRACTION_REQUEST :
-      begin
-        case AMessage.DataArray[0] of
-          TRACTION_CONTROLLER_CONFIG :
-            begin
-              case AMessage.DataArray[1] of
-                TRACTION_CONTROLLER_CONFIG_ASSIGN,
-                TRACTION_CONTROLLER_CONFIG_RELEASE,
-                TRACTION_CONTROLLER_CONFIG_CHANGING_NOTIFY :
-                begin
-                  ANodeID := NULL_NODE_ID;
-                  AMessage.ExtractDataBytesAsNodeID(3, ANodeID);
-                  NewIdentificationItem(ANodeID);
-                end;
-              end
-            end;
-          TRACTION_LISTENER :
-            begin
-              case AMessage.DataArray[1] of
-                TRACTION_LISTENER_ATTACH,
-                TRACTION_LISTENER_DETACH :
-                  begin
-                    ANodeID := NULL_NODE_ID;
-                    AMessage.ExtractDataBytesAsNodeID(3, ANodeID);
-                    NewIdentificationItem(ANodeID);
-                  end;
-              end;
-            end
-        end
-      end;
-  end;
-end;
-
-procedure TLccMessageWithNodeIdentification.NewIdentificationItem(ANodeID: TNodeID);
-var
-  ADestinationObject: TLccNodeIdentificationObject;
-begin
-  if not NullNodeID(ANodeID) then
-  begin
-    ADestinationObject := TLccNodeIdentificationObject.Create;
-    ADestinationObject.AssignID(ANodeID, 0);
-    MessageNodeIdentifications.Add(ADestinationObject);
-  end;
-end;
-
-function TLccMessageWithNodeIdentification.LogOut(AnAlias: Word): Boolean;
-begin
-  Result := MessageNodeIdentifications.LogOut(AnAlias);
+  Result := (Alias <> 0) or ((NodeID[0] <> 0) or (NodeID[1] <> 0))
 end;
 
 { TLccNodeIdentificationObjectList }
@@ -1109,6 +883,23 @@ begin
   end;
 end;
 
+function TLccNodeIdentificationObjectList.IsDuplicate(ANodeID: TNodeID; AnAlias: Word): Boolean;
+var
+  i: Integer;
+  NodeIdentificationObject: TLccNodeIdentificationObject;
+begin
+  Result := False;
+  for i := 0 to Count - 1 do
+  begin
+    NodeIdentificationObject := TLccNodeIdentificationObject( Items[i]);
+    if (NodeIdentificationObject.NodeID[0] = ANodeID[0]) and (NodeIdentificationObject.NodeID[1] = ANodeID[1]) and (NodeIdentificationObject.Alias = AnAlias) then
+    begin
+      Result := True;
+      Break
+    end;
+  end;
+end;
+
 function TLccNodeIdentificationObjectList.ProcessNewMapping(NewMapping: TLccAliasMapping): Boolean;
 var
   i: Integer;
@@ -1168,169 +959,27 @@ function TLccNodeIdentificationObjectList.AddNodeIdentificationObject(ANodeID: T
 begin
   Result := TLccNodeIdentificationObject.Create;
   Result.AssignID(ANodeID, AnAlias);
+  Add(Result)
 end;
 
-{ TLccMessageWithNodeIdentificationList }
-
-function TLccMessageWithNodeIdentificationList.GetLccMessageIdentification(Index: Integer): TLccMessageWithNodeIdentification;
-begin
-  Result := TLccMessageWithNodeIdentification(Items[Index])
-end;
-
-procedure TLccMessageWithNodeIdentificationList.SetLccMessageIdentification(Index: Integer; AValue: TLccMessageWithNodeIdentification);
-begin
-  if Index < Count then
-  begin
-    TObject(Items[Index]).Free;
-    Items[Index] := AValue;
-  end;
-end;
-
-procedure TLccMessageWithNodeIdentificationList.Clear;
+function TLccNodeIdentificationObjectList.RetryCountMaxedOut(ATestCount: Integer): Boolean;
 var
   i: Integer;
 begin
-  try
-    for i := 0 to Count - 1 do
-      TObject(Items[i]).Free;
-  finally
-    inherited Clear;
-  end;
-end;
+  Result := True;
 
-function TLccMessageWithNodeIdentificationList.Pop: TLccMessage;
-var
-  MessageWithNodeIdentification:  TLccMessageWithNodeIdentification;
-begin
-  // We can only pop off the bottom
-  Result := nil;
-  if Count > 0 then
-  begin
-    MessageWithNodeIdentification := LccMessageIdentification[0];
-
-    Result := MessageWithNodeIdentification.LccMessage;
-
-    if MessageWithNodeIdentification.MessageNodeIdentifications.IdentificationsValid then
-    begin
-
-      MessageWithNodeIdentification.FLccMessage := nil;
-      MessageWithNodeIdentification.Free;
-      Delete(0);
-    end;
-  end;
-end;
-
-function TLccMessageWithNodeIdentificationList.Push(AMessage: TLccMessage): TLccNodeIdentificationObjectList;
-var
-  MessageWithNodeIdentification: TLccMessageWithNodeIdentification;
-begin
-  MessageWithNodeIdentification := TLccMessageWithNodeIdentification.Create;
-  MessageWithNodeIdentification.CloneMessageAndCreateIdentificationObjects(AMessage);
-  Add(MessageWithNodeIdentification);
-  Result := MessageWithNodeIdentification.MessageNodeIdentifications;
-end;
-
-procedure TLccMessageWithNodeIdentificationList.ProcessNewMapping(AliasMapping: TLccAliasMapping);
-var
-  i: Integer;
-begin
   for i := 0 to Count - 1 do
-    LccMessageIdentification[i].MessageNodeIdentifications.ProcessNewMapping(AliasMapping);
-end;
-
-procedure TLccMessageWithNodeIdentificationList.LogOut(AnAlias: Word);
-var
-  i: Integer;
-  NodeIdentification: TLccMessageWithNodeIdentification;
-begin
-  for i := Count - 1 downto 0 do
   begin
-    NodeIdentification := TLccMessageWithNodeIdentification(Items[i]);
-    if NodeIdentification.LogOut(AnAlias) then
+    if TLccNodeIdentificationObject( Items[i]).Valid then
     begin
-      NodeIdentification.Free;
-      Delete(i);
+      if TLccNodeIdentificationObject( Items[i]).AbandonCount < ATestCount then
+      begin
+        Result := False;
+        Break
+      end;
     end;
   end;
 end;
-
-
-{ TLccTheadMessageList }
-
-function TLccTheadMessageList.GetLccMessage(Index: Integer): TLccMessage;
-var
-  List: TList;
-begin
-  List := LockList;
-  try
-    Result := TLccMessage( List[Index]);
-  finally
-    UnlockList;
-  end;
-end;
-
-function TLccTheadMessageList.GetInteger: Integer;
-var
-  List: TList;
-begin
-  List := LockList;
-  try
-    Result := List.Count
-  finally
-    UnlockList;
-  end;
-end;
-
-destructor TLccTheadMessageList.Destroy;
-begin
-  Clear;
-  inherited Destroy;
-end;
-
-procedure TLccTheadMessageList.Push(AMessage: TLccMessage);
-var
-  List: TList;
-begin
-  List := LockList;
-  try
-    List.Add(AMessage);
-  finally
-    UnlockList;
-  end;
-end;
-
-procedure TLccTheadMessageList.Clear;
-var
-  List: TList;
-  i: Integer;
-begin
-  List := LockList;
-  try
-    for i := 0 to List.Count - 1 do
-      TObject(List[i]).Free;
-  finally
-    List.Clear;
-    UnlockList;
-  end;
-end;
-
-function TLccTheadMessageList.Pop: TLccMessage;
-var
-  List: TList;
-begin
-  Result := nil;
-  List := LockList;
-  try
-    if List.Count > 0 then
-    begin
-      Result := TLccMessage( List[0]);
-      List.Delete(0);
-    end;
-  finally
-    UnlockList;
-  end;
-end;
-
 
 { TLccMessage }
 
@@ -1378,8 +1027,8 @@ begin
   Result.FDestID := FDestID;
   Result.FSourceID := FSourceID;
   Result.FMTI := FMTI;
-  Result.RetryAttempts := 0;
-  Result.AbandonTimeout := 0;
+  Result.RetryAttemptsDatagram := 0;
+  Result.AbandonCount := 0;
 end;
 
 procedure TLccMessage.InsertNodeID(StartIndex: Integer; var ANodeID: TNodeID);
@@ -1442,11 +1091,13 @@ constructor TLccMessage.Create;
 begin
   inherited Create;
   CAN := TLccCANMessage.Create;
+  FNodeIdentifications := TLccNodeIdentificationObjectList.Create;
 end;
 
 destructor TLccMessage.Destroy;
 begin
-  FCAN.Free;
+  FreeAndNil(FCAN);
+  FreeAndNil(FNodeIdentifications);
   inherited Destroy;
 end;
 
@@ -1964,6 +1615,94 @@ begin
     Result := (TestNodeID[0] = DestID[0]) and (TestNodeID[1] = DestID[1]);
 end;
 
+function TLccMessage.ExtractNodeIdentifications(ForceEvaluation: Boolean): TLccNodeIdentificationObjectList;
+
+  procedure NewIdentificationItem(ANodeID: TNodeID);
+  var
+    ADestinationObject: TLccNodeIdentificationObject;
+  begin
+    if not NullNodeID(ANodeID) then
+    begin
+      ADestinationObject := TLccNodeIdentificationObject.Create;
+      ADestinationObject.AssignID(ANodeID, 0);
+      NodeIdentifications.Add(ADestinationObject);
+    end;
+  end;
+
+var
+  ANodeID: TNodeID;
+begin
+  if ForceEvaluation or (NodeIdentifications.Count = 0) then
+  begin
+    NodeIdentifications.ClearIdentifications;
+    NodeIdentifications.Source.AssignID(SourceID, CAN.SourceAlias);
+    if HasDestination then
+      NodeIdentifications.Destination.AssignID(DestID, CAN.DestAlias);
+
+    case MTI of
+      MTI_TRACTION_REQUEST :
+        begin
+          case DataArray[0] of
+            TRACTION_CONTROLLER_CONFIG :
+              begin
+                case DataArray[1] of
+                  TRACTION_CONTROLLER_CONFIG_ASSIGN,
+                  TRACTION_CONTROLLER_CONFIG_RELEASE,
+                  TRACTION_CONTROLLER_CONFIG_CHANGING_NOTIFY :
+                  begin
+                    ANodeID := NULL_NODE_ID;
+                    ExtractDataBytesAsNodeID(3, ANodeID);
+                    NewIdentificationItem(ANodeID);
+                  end;
+                end
+              end;
+            TRACTION_LISTENER :
+              begin
+                case DataArray[1] of
+                  TRACTION_LISTENER_ATTACH,
+                  TRACTION_LISTENER_DETACH :
+                    begin
+                      ANodeID := NULL_NODE_ID;
+                      ExtractDataBytesAsNodeID(3, ANodeID);
+                      NewIdentificationItem(ANodeID);
+                    end;
+                end;
+              end
+          end
+        end;
+          MTI_TRACTION_REPLY :
+        begin
+          case DataArray[0] of
+            TRACTION_CONTROLLER_CONFIG :
+              begin
+                case DataArray[1] of
+                  TRACTION_CONTROLLER_CONFIG_QUERY :
+                    begin
+                     ANodeID := NULL_NODE_ID;
+                     ExtractDataBytesAsNodeID(3, ANodeID);
+                     if not NullNodeID(ANodeID) then    // NULL is valid for no controller assigned
+                       NewIdentificationItem(ANodeID);
+                    end;
+                  end
+              end;
+
+             TRACTION_LISTENER :
+               case DataArray[1] of
+                  TRACTION_LISTENER_ATTACH,
+                  TRACTION_LISTENER_DETACH :
+                    begin
+                      ANodeID := NULL_NODE_ID;
+                      ExtractDataBytesAsNodeID(2, ANodeID);
+                      NewIdentificationItem(ANodeID);
+                    end;
+                end;
+          end;
+        end;
+    end;
+  end;
+  Result := NodeIdentifications;
+end;
+
 procedure TLccMessage.ZeroFields;
 begin
   FIsCAN := False;
@@ -2167,6 +1906,12 @@ end;
 function TLccMessage.TractionExtractControllerChangedResult: Byte;
 begin
   Result := DataArray[2];
+end;
+
+function TLccMessage.TractionExtractControllerNodeID: TNodeID;
+begin
+  Result := NULL_NODE_ID;
+  Result := ExtractDataBytesAsNodeID(3, Result);
 end;
 
 function TLccMessage.TractionExtractListenerID: TNodeID;
@@ -2604,6 +2349,21 @@ begin
   MTI := MTI_TRACTION_REQUEST;
 end;
 
+procedure TLccMessage.LoadTractionSetSpeed(ASourceID: TNodeID;
+  ASourceAlias: Word; ADestID: TNodeID; ADestAlias: Word; ASpeed: THalfFloat);
+begin
+  ZeroFields;
+  SourceID := ASourceID;
+  DestID := ADestID;
+  CAN.SourceAlias := ASourceAlias;
+  CAN.DestAlias := ADestAlias;
+  DataCount := 3;
+  FDataArray[0] := TRACTION_SET_SPEED_DIR;
+  FDataArray[1] := Hi( ASpeed);
+  FDataArray[2] := Lo( ASpeed);
+  MTI := MTI_TRACTION_REQUEST;
+end;
+
 procedure TLccMessage.LoadVerifiedNodeID(ASourceID: TNodeID; ASourceAlias: Word);
 begin
   ZeroFields;
@@ -2864,7 +2624,7 @@ begin
   MTI := MTI_TRACTION_REQUEST;
 end;
 
-procedure TLccMessage.LoadTractionControllerChangedReply(ASourceID: TNodeID;
+procedure TLccMessage.LoadTractionControllerChangingReply(ASourceID: TNodeID;
   ASourceAlias: Word; ADestID: TNodeID; ADestAlias: Word; Allow: Boolean);
 begin
   ZeroFields;
@@ -2911,8 +2671,7 @@ begin
   DataCount := 10;
   FDataArray[0] := TRACTION_LISTENER;
   FDataArray[1] := TRACTION_LISTENER_ATTACH;
-  FDataArray[2] := 0;
-  InsertNodeID(3, AListenerNodeID);
+  InsertNodeID(2, AListenerNodeID);
   FDataArray[8] := Hi(ReplyCode);
   FDataArray[9] := Lo(ReplyCode);
   MTI := MTI_TRACTION_REPLY;
@@ -2947,8 +2706,7 @@ begin
   DataCount := 10;
   FDataArray[0] := TRACTION_LISTENER;
   FDataArray[1] := TRACTION_LISTENER_DETACH;
-  FDataArray[2] := 0;
-  InsertNodeID(3, AListenerNodeID);
+  InsertNodeID(2, AListenerNodeID);
   FDataArray[8] := Hi(ReplyCode);
   FDataArray[9] := Lo(ReplyCode);
   MTI := MTI_TRACTION_REPLY;

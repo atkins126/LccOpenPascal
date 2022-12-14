@@ -24,6 +24,7 @@ uses
   lcc_node_messages,
   lcc_node,
   lcc_node_train,
+  lcc_node_traindatabase,
   lcc_utilities;
 
 const
@@ -58,22 +59,20 @@ type
 
   { TLccCommandStationNode }
 
-  TLccCommandStationNode = class(TLccNode)
+  TLccCommandStationNode = class(TLccTractionServerNode)
   protected
     function GetCdiFile: string; override;
     procedure BeforeLogin; override;
 
   public
+    property TractionServer;
+
     constructor Create(ANodeManager: {$IFDEF DELPHI}TComponent{$ELSE}TObject{$ENDIF}; CdiXML: string; GridConnectLink: Boolean); override;
     function AddTrain(ADccAddress: Word; ALongAddress: Boolean; ASpeedStep: TLccDccSpeedStep): TLccTrainDccNode;
     procedure ClearTrains;
     function FindTrainByLccNodeID(ANodeID: TNodeID): TLccTrainDccNode;
     function FindTrainByDccAddress(DccAddress: Word; IsLongAddress: Boolean): TLccTrainDccNode;
-    procedure MappingNewDiscovered(AMessage: TLccMessage); override;
-    procedure MappingReset(AMessage: TLccMessage); override;
-    procedure MessageStackPush(AMessage: TLccMessage); override;
     function ProcessMessageLCC(SourceMessage: TLccMessage): Boolean; override;
-    procedure ProcessPopMessages; override;
   end;
 
   TLccCommandStationNodeClass = class of TLccCommandStationNode;
@@ -86,7 +85,7 @@ uses
 
 function TLccCommandStationNode.AddTrain(ADccAddress: Word; ALongAddress: Boolean; ASpeedStep: TLccDccSpeedStep): TLccTrainDccNode;
 begin
-  Result := (NodeManager as INodeManager).AddNodeByClass('', TLccTrainDccNode, False, NULL_NODE_ID) as TLccTrainDccNode;
+  Result := (NodeManager as TLccNodeManager).AddNodeByClass('', TLccTrainDccNode, False, NULL_NODE_ID) as TLccTrainDccNode;
   if Assigned(Result) then
   begin
     Result.DccAddress := ADccAddress;
@@ -131,21 +130,22 @@ end;
 constructor TLccCommandStationNode.Create(ANodeManager: {$IFDEF DELPHI}TComponent{$ELSE}TObject{$ENDIF}; CdiXML: string; GridConnectLink: Boolean);
 begin
   inherited Create(ANodeManager, CdiXML, GridConnectLink);
-  EnableTrainDatabase := True;
+  TractionServer.Enabled := True;
 end;
 
 procedure TLccCommandStationNode.ClearTrains;
 var
   i: Integer;
-  LocalNodeManager: INodeManager;
   LocalNode: TLccNode;
+  LocalNodeList: TList;
 begin
-  LocalNodeManager := NodeManager as INodeManager;
-  for i := LocalNodeManager.GetNodeCount - 1 downto 0 do
+  LocalNodeList := (NodeManager as TLccNodeManager).Nodes;
+  for i := LocalNodeList.Count - 1 downto 0 do
    begin
-     if LocalNodeManager.GetNode(i) is TLccTrainDccNode then
+     LocalNode := TLccNode(LocalNodeList[i]);
+     if LocalNode is TLccTrainDccNode then
      begin
-       LocalNode := LocalNodeManager.ExtractNode(i);
+       LocalNodeList.Delete(i);
        LocalNode.Free;
      end;
    end;
@@ -154,53 +154,38 @@ end;
 function TLccCommandStationNode.FindTrainByDccAddress(DccAddress: Word; IsLongAddress: Boolean): TLccTrainDccNode;
 var
   i: Integer;
-  LocalNodeManager: INodeManager;
-  TempTrain: TLccTrainDccNode;
+  LocalTrainNode: TLccTrainDccNode;
+  LocalNodeList: TList;
 begin
   Result := nil;
-  LocalNodeManager := NodeManager as INodeManager;
-  for i := 0 to LocalNodeManager.GetNodeCount - 1 do
+  LocalNodeList := (NodeManager as TLccNodeManager).Nodes;
+  for i := LocalNodeList.Count - 1 downto 0 do
    begin
-     if LocalNodeManager.GetNode(i) is TLccTrainDccNode then
+     if TLccNode(LocalNodeList[i]) is TLccTrainDccNode then
      begin
-       TempTrain := LocalNodeManager.GetNode(i) as TLccTrainDccNode;
-       if (DccAddress = TempTrain.DccAddress) and (IsLongAddress = TempTrain.DccLongAddress) then
+       LocalTrainNode := TLccTrainDccNode(LocalNodeList[i]);
+       if (DccAddress = LocalTrainNode.DccAddress) and (IsLongAddress = LocalTrainNode.DccLongAddress) then
        begin
-         Result := TempTrain;
+         Result := LocalTrainNode;
          Break;
        end;
      end;
    end;
 end;
 
-procedure TLccCommandStationNode.MappingNewDiscovered(AMessage: TLccMessage);
-begin
-  inherited MappingNewDiscovered(AMessage);   // For debugging
-end;
-
-procedure TLccCommandStationNode.MappingReset(AMessage: TLccMessage);
-begin
-  inherited MappingReset(AMessage);  // For debugging
-end;
-
-procedure TLccCommandStationNode.MessageStackPush(AMessage: TLccMessage);
-begin
-  inherited MessageStackPush(AMessage); // For debugging
-end;
-
 function TLccCommandStationNode.FindTrainByLccNodeID(ANodeID: TNodeID): TLccTrainDccNode;
 var
   i: Integer;
-  LocalNodeManager: INodeManager;
   LocalTrainNode: TLccTrainDccNode;
+  LocalNodeList: TList;
 begin
   Result := nil;
-  LocalNodeManager := NodeManager as INodeManager;
-  for i := 0 to LocalNodeManager.GetNodeCount - 1 do
+  LocalNodeList := (NodeManager as TLccNodeManager).Nodes;
+  for i := LocalNodeList.Count - 1 downto 0 do
    begin
-     if LocalNodeManager.GetNode(i) is TLccTrainDccNode then
+     if TLccNode(LocalNodeList[i]) is TLccTrainDccNode then
      begin
-       LocalTrainNode := LocalNodeManager.GetNode(i) as TLccTrainDccNode;
+       LocalTrainNode := TLccTrainDccNode(LocalNodeList[i]);
        if EqualNodeID(ANodeID, LocalTrainNode.NodeID, False) then
        begin
          Result := LocalTrainNode;
@@ -227,16 +212,6 @@ begin
   Result := inherited ProcessMessageLcc(SourceMessage);
 
   case SourceMessage.MTI of
-     MTI_INITIALIZATION_COMPLETE :
-      begin  // Need to wait for new trains to fully initalize before returning from the Traction Search Event........
-        ATrain := FindTrainByLccNodeID(SourceMessage.SourceID);
-        if Assigned(ATrain) then
-        begin
-          ReturnEvent := ATrain.SearchEvent;
-          WorkerMessage.LoadProducerIdentified(ATrain.NodeID, ATrain.AliasID, ReturnEvent, evs_Valid);
-          SendMessageFunc(ATrain, WorkerMessage);
-        end
-      end;
     MTI_PRODUCER_IDENDIFY :
       begin
         if SourceMessage.TractionIsSearchEvent then    // Is the the event for for traction search?
@@ -271,8 +246,11 @@ begin
 
               if Assigned(ATrain) then
               begin
-                WorkerMessage.LoadProducerIdentified(ATrain.NodeID, ATrain.AliasID, ReturnEvent, evs_Valid);
-                SendMessageFunc(ATrain, WorkerMessage);      // Need to send the train for this one
+                if ATrain.Permitted then  // Once it logs in and becomes permitted it will send this message if not permitted yet
+                begin
+                  WorkerMessage.LoadProducerIdentified(ATrain.NodeID, ATrain.AliasID, ReturnEvent, evs_Valid);
+                  SendMessageFunc(ATrain, WorkerMessage);      // Need to send the train for this one
+                end;
               end else
               if SourceMessage.TractionSearchIsForceAllocate then
               begin
@@ -285,11 +263,6 @@ begin
         end;
       end;
   end;
-end;
-
-procedure TLccCommandStationNode.ProcessPopMessages;
-begin
-  inherited ProcessPopMessages; // for debugging
 end;
 
 end.

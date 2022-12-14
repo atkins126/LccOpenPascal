@@ -29,10 +29,6 @@ uses
   lcc_train_server,
   lcc_alias_server;
 
-
-const
-  MAX_HARDWARE_CONNECTIONS = 10;  // Lazy here to make it dynamic to use with SMS should never ever need more than 10
-
 type
 
   // This is how the Node Manager has access to the Connection Links with needing
@@ -47,206 +43,210 @@ type
 //    if the node manager has no more active threads in its links then it should free all nodes and alias maps since it is no longer connected to any LCC networks and everythinbg is stale.
   end;
 
-  INodeManager = interface
-    ['{0FE72011-CBDB-9EDC-0C36-C5031A63F27F}']
-    procedure Clear;
-    function AddNode(CdiXML: string; AutoLogin: Boolean): TLccNode;
-    function AddNodeByClass(CdiXML: string; NodeClass: TLccNodeClass; AutoLogin: Boolean; NodeID: TNodeID): TLccNode;
-    procedure LogoutAll;
-    function GetNode(Index: Integer): TLccNode;
-    function GetNodeCount: Integer;
-    function ExtractNode(Index: Integer): TLccNode;
-  end;
-
-
   { INodeManagerCallbacks }
 
   INodeManagerCallbacks = interface
     ['{C6920bCA-08BC-4D45-B27C-174640FA3106}']
-    procedure DoAliasIDChanged(LccNode: TLccNode);               //*
-    procedure DoCANAliasMapReset(LccNode: TLccNode);             //*
+    procedure DoAliasIDChanged(LccNode: TLccNode);
+    procedure DoAliasMappingChange(LccNode: TLccNode; AnAliasMapping: TLccAliasMapping; IsMapped: Boolean);
+    procedure DoAliasReset(LccNode: TLccNode);
     procedure DoCDIRead(LccNode: TLccNode);
-    procedure DoConfigMemAddressSpaceInfoReply(LccNode: TLccNode; AddressSpace: Byte);
+    procedure DoConfigMemAddressSpaceInfoReply(LccNode: TLccNode);
     procedure DoConfigMemOptionsReply(LccNode: TLccNode);
     procedure DoConfigMemReadReply(LccNode: TLccNode);
     procedure DoConfigMemWriteReply(LccNode: TLccNode);
-    procedure DoCreateLccNode(LccNode: TLccNode);     //*
-    procedure DoConsumerIdentify(LccNode: TLccNode; LccMessage: TLccMessage; var DoDefault: Boolean);
-    procedure DoConsumerIdentified(LccNode: TLccNode; LccMessage: TLccMessage; var Event: TEventID; State: TEventState);
+    procedure DoConsumerIdentified(LccNode: TLccNode; LccMessage: TLccMessage);
+    procedure DoCreateLccNode(LccNode: TLccNode);
     procedure DoDatagramReply(LccNode: TLccNode);
-    procedure DoDestroyLccNode(LccNode: TLccNode);   //*
+    procedure DoDestroyLccNode(LccNode: TLccNode);
+    procedure DoInitializationComplete(LccNode: TLccNode);
     procedure DoLogInNode(LccNode: TLccNode);
-    procedure DoLogOutNode(LccNode: TLccNode);
-    procedure DoFDI(LccNode: TLccNode);
-    procedure DoFunctionConfiguration(LccNode: TLccNode);
-    procedure DoInitializationComplete(LccNode: TLccNode);   //*
-    procedure DoNodeIDChanged(LccNode: TLccNode);                  //*
-    procedure DoOptionalInteractionRejected(LccNode: TLccNode);
-    procedure DoProducerIdentify(LccNode: TLccNode; LccMessage: TLccMessage; var DoDefault: Boolean);
-    procedure DoProducerIdentified(LccNode: TLccNode; LccMessage: TLccMessage; var Event: TEventID; State: TEventState);
-    procedure DoProtocolIdentifyReply(LccNode: TLccNode);
-    procedure DoRemoteButtonReply(LccNode: TLccNode);
-    procedure DoSimpleNodeIdentReply(LccNode: TLccNode);
-    procedure DoSimpleTrainNodeIdentReply(LccNode: TLccNode);
+    procedure DoNodeIDChanged(LccNode: TLccNode);
+    procedure DoOptionalInteractionRejected(LccNode: TLccNode; LccMessage: TLccMessage);
+    procedure DoProducerIdentified(LccNode: TLccNode; LccMessage: TLccMessage);
+    procedure DoProtocolIdentifyReply(LccNode: TLccNode; LccMessage: TLccMessage);
+    procedure DoRemoteButtonReply(LccNode: TLccNode; LccMessage: TLccMessage);
+    procedure DoSimpleNodeIdentReply(LccNode: TLccNode; LccMessage: TLccMessage);
+    procedure DoVerifiedNodeID(LccNode: TLccNode; LccMessage: TLccMessage);
+  end;
 
-    procedure DoTractionQuerySpeed(LccNode: TLccNode; TrainObject: TLccTrainObject);
-    procedure DoTractionQueryFunction(LccNode: TLccNode; TrainObject: TLccTrainObject);
-    procedure DoTractionControllerAssign(LccNode: TLccNode; TrainObject: TLccTrainObject);
-    procedure DoTractionControllerQuery(LccNode: TLccNode; TrainObject: TLccTrainObject);
-    procedure DoTractionControllerChangedNotify(LccNode: TLccNode; TrainObject: TLccTrainObject);
-    procedure DoTractionListenerAttach(LccNode: TLccNode; Listener: TNodeID; Flags: Byte);
-    procedure DoTractionListenerDetach(LccNode: TLccNode; Listener: TNodeID; Flags: Byte);
-    procedure DoTractionListenerQuery(LccNode: TLccNode; Index: Integer);
-    procedure DoTractionUpdateSNIP(LccNode: TLccNode; TrainObject: TLccTrainObject);
-    procedure DoTractionUpdateTrainSNIP(LccNode: TLccNode; TrainObject: TLccTrainObject);
-    procedure DoTractionUpdateListenerCount(LccNode: TLccNode; TrainObject: TLccTrainObject);
-    procedure DoTractionManage(LccNode: TLccNode; LccMessage: TLccMessage; IsReply: Boolean);
-    procedure DoVerifiedNodeID(LccNode: TLccNode);
-    procedure DoAliasMappingChange(LccNode: TLccNode; AnAliasMapping: TLccAliasMapping; IsMapped: Boolean);
-    procedure DoTrainRegisteringChange(LccNode: TLccNode; TrainObject: TLccTrainObject; IsRegistered: Boolean);
+    // These are just straight callbacks on the traction messages
+  { INodeManagerTractionCallbacks }
+
+  INodeManagerTractionCallbacks = interface
+    ['{3FEB8AAB-060F-CD7E-1747-22D6E6F6FBC7}']
+    procedure DoTractionControllerAssign(LccNode: TLccNode; ALccMessage: TLccMessage; var DoDefault: Boolean);
+    procedure DoTractionControllerRelease(LccNode: TLccNode; ALccMessage: TLccMessage; var DoDefault: Boolean);
+    procedure DoTractionControllerQuery(LccNode: TLccNode; ALccMessage: TLccMessage; var DoDefault: Boolean);
+    procedure DoTractionControllerChange(LccNode: TLccNode; ALccMessage: TLccMessage; var DoDefault: Boolean);
+    procedure DoTractionControllerChangeReply(LccNode: TLccNode; ALccMessage: TLccMessage; var DoDefault: Boolean);
+    procedure DoTractionEmergencyStop(LccNode: TLccNode; ALccMessage: TLccMessage; var DoDefault: Boolean);
+    procedure DoTractionListenerAttach(LccNode: TLccNode; ALccMessage: TLccMessage; var DoDefault: Boolean);
+    procedure DoTractionListenerDetach(LccNode: TLccNode; ALccMessage: TLccMessage; var DoDefault: Boolean);
+    procedure DoTractionListenerQuery(LccNode: TLccNode; ALccMessage: TLccMessage; var DoDefault: Boolean);
+    procedure DoTractionManageReserve(LccNode: TLccNode; LccMessage: TLccMessage; var DoDefault: Boolean);
+    procedure DoTractionManageRelease(LccNode: TLccNode; LccMessage: TLccMessage; var DoDefault: Boolean);
+    procedure DoTractionQuerySpeed(LccNode: TLccNode; ALccMessage: TLccMessage; var DoDefault: Boolean);
+    procedure DoTractionQueryFunction(LccNode: TLccNode; ALccMessage: TLccMessage; var DoDefault: Boolean);
+    procedure DoTractionSetFunction(LccNode: TLccNode; ALccMessage: TLccMessage; var DoDefault: Boolean);
+    procedure DoTractionSetSpeed(LccNode: TLccNode; ALccMessage: TLccMessage; var DoDefault: Boolean);
+    procedure DoTractionTrainSNIP(LccNode: TLccNode; ALccMessage: TLccMessage; var DoDefault: Boolean);
   end;
 
 type
 
-  TOnLccNodeMessage = procedure(Sender: TObject; LccSourceNode: TLccNode) of object;
-  TOnLccNodeMessageWithDest = procedure(Sender: TObject; LccNode: TLccNode) of object;
-  TOnLccNodeEventIdentify = procedure(Sender: TObject; LccNode: TLccNode; LccMessage: TLccMessage; var DoDefault: Boolean) of object;
-  TOnLccNodeEventIdentified = procedure(Sender: TObject; Lccnode: TLccNode; LccMessage: TLccMessage; var Event: TEventID; State: TEventState) of object;
-  TOnLccNodeMessageResultCode = procedure(Sender: TObject; LccNode: TLccNode; LccMessage: TLccMessage; ResultCode: Byte) of object;
-  TOnLccNodeConfigMem = procedure(Sender: TObject; LccNode: TLccNode) of object;
-  TOnLccNodeConfigMemAddressSpace = procedure(Sender: TObject; LccNode: TLccNode; AddressSpace: Byte) of object;
-  TOnLccNodeMessageWithReply = procedure(Sender: TObject; LccSourceNode: TLccNode; LccMessage: TLccMessage; IsReply: Boolean) of object;  // TODO:
-  TOnLccNodeMessageWithTrainObject = procedure(Sender: TObject; LccSourceNode: TLccNode; TrainObject: TLccTrainObject) of object;
-  TOnLccNodeListenerAttach = procedure(Sender: TObject; LccSourceNode: TLccNode; ListenerID: TNodeID; Flags: Byte) of object;
-  TOnLccNodeListenerDetach = procedure(Sender: TObject; LccSourceNode: TLccNode; ListenerID: TNodeID; Flags: Byte) of object;
-  TOnLccNodeListenerQuery = procedure(Sender: TObject; LccSourceNode: TLccNode; Index: Integer) of object;
-  TOnLccTractionUpdateSNIP = procedure(Sender: TObject; LccSourceNode: TLccNode; TrainObject: TLccTrainObject) of object;
-  TOnLccTractionUpdateTrainSNIP = procedure(Sender: TObject; LccSourceNode: TLccNode; TrainObject: TLccTrainObject) of object;
-  TOnLccTractionUpdateListenerCount = procedure(Sender: TObject; LccSourceNode: TLccNode; TrainObject: TLccTrainObject) of object;
-  TOnAliasMappingChange = procedure(Sender: TObject; LccSourceNode: TLccNode; AnAliasMapping: TLccAliasMapping; IsMapped: Boolean) of object;
-  TOnTrainRegisteringChange = procedure(Sender: TObject; LccSourceNode: TLccNode; TrainObject: TLccTrainObject; IsRegistered: Boolean) of object;
-  TOnTrainInformationChange = procedure(Sender: TObject; LccSourceNode: TLccNode; TrainObject: TLccTrainObject) of object;
+  TOnLccNodeMessageCallBack = procedure(Sender: TObject; ALccNode: TLccNode; ALccMessage: TLccMessage; var DoDefault: Boolean) of object;
+  TOnLccNodeMessage = procedure(Sender: TObject; ALccNode: TLccNode) of object;
+  TOnLccNodeMessageReply = procedure(Sender: TObject; ALccNode: TLccNode; LccMessage: TLccMessage) of object;
+  TOnAliasMappingChange = procedure(Sender: TObject; ALccNode: TLccNode; AnAliasMapping: TLccAliasMapping; IsMapped: Boolean) of object;
+
+  TLccNodeManager = class;  // forward
+
+  ENodeIdentificationObjectIsNull = class(Exception);
+
+
+  TDelayedMessage = class
+  public
+ //   property AMessage: TLccMessage read FAMessage write FAMessage;
+ //   property
+  end;
+
+  { TReceiveMessageServerThread }
+
+  TReceiveMessageServerThread = class(TThread)
+  private
+    FDestAlias: Word;
+    FDestNodeID: TNodeID;
+    FMessages: TThreadList;
+    FOwner: TLccNodeManager;
+    FReceivedMessage: TLccMessage;
+    FWorkerMessage: TLccMessage;
+  protected
+    property ReceivedMessage: TLccMessage read FReceivedMessage write FReceivedMessage;
+    property WorkerMessage: TLccMessage read FWorkerMessage write FWorkerMessage;
+    property DestAlias: Word read FDestAlias write FDestAlias;
+    property DestNodeID: TNodeID read FDestNodeID write FDestNodeID;
+
+    procedure Execute; override;
+    procedure ReceiveMessageSyncronize;   // Syncronize Method
+    procedure SendMessageSyncronize;      // Syncronize Method
+    procedure UpdateGlobalMappings(AMessage: TLccMessage);
+    function ValidateMappingsInMessage(AMessage: TLccMessage; ANodeIdentificationForSendMessageList: TList): Boolean;
+    function IsDuplicateNodeIdentificationObject(ANodeIdentificationObjectList: TList; ATestNodeIDObject: TLccNodeIdentificationObject): Boolean;
+
+  public
+    property Messages: TThreadList read FMessages write FMessages;
+    property Owner: TLccNodeManager read FOwner write FOwner;
+
+    procedure AddMessage(AMessage: TLccMessage);
+  end;
 
   { TLccNodeManager }
 
-  TLccNodeManager = class(TComponent, INodeManagerCallbacks, INodeManager)
+  TLccNodeManager = class(TComponent, INodeManagerCallbacks, INodeManagerTractionCallbacks)
   private
     FGridConnect: Boolean;
     FHardwarewareConnectionList: TInterfaceList;
+    FNodes: TList;
     FOnAliasMappingChange: TOnAliasMappingChange;
-    FOnLccNodeAliasIDChanged: TOnLccNodeMessage;
-    FOnLccMessageReceive: TOnMessageEvent;
-    FOnLccNodeConfigMemAddressSpaceInfoReply: TOnLccNodeConfigMemAddressSpace;
-    FOnLccNodeConfigMemOptionsReply: TOnLccNodeConfigMem;
-    FOnLccNodeConsumerIdentify: TOnLccNodeEventIdentify;
-    FOnLccNodeIDChanged: TOnLccNodeMessage;
-    FOnLccCANAliasMapReset: TOnLccNodeMessage;
-    FOnLccNodeCDI: TOnLccNodeMessageWithDest;
-    FOnLccNodeConfigMemReadReply: TOnLccNodeConfigMem;
-    FOnLccNodeConfigMemWriteReply: TOnLccNodeConfigMem;
-    FOnLccNodeConsumerIdentified: TOnLccNodeEventIdentified;
-    FOnLccNodeCreate: TOnLccNodeMessage;
-    FOnLccNodeDatagramReply: TOnLccNodeMessageWithDest;
-    FOnLccNodeDestroy: TOnLccNodeMessage;
-    FOnLccNodeFDI: TOnLccNodeMessageWithDest;
-    FOnLccNodeFunctionConfiguration: TOnLccNodeMessageWithDest;
-    FOnLccNodeInitializationComplete: TOnLccNodeMessage;
-    FOnLccNodeLogin: TOnLccNodeMessage;
-    FOnLccNodeLogout: TOnLccNodeMessage;
-    FOnLccNodeOptionalInteractionRejected: TOnLccNodeMessageWithDest;
-    FOnLccNodeProducerIdentified: TOnLccNodeEventIdentified;
-    FOnLccNodeProducerIdentify: TOnLccNodeEventIdentify;
-    FOnLccNodeProtocolIdentifyReply: TOnLccNodeMessageWithDest;
-    FOnLccNodeRemoteButtonReply: TOnLccNodeMessageWithDest;
-    FOnLccNodeSimpleNodeIdentReply: TOnLccNodeMessageWithDest;
-    FOnLccNodeSimpleTrainNodeIdentReply: TOnLccNodeMessageWithDest;
-    FOnLccNodeTractionControllerChangeNotify: TOnLccNodeMessageWithTrainObject;
-    FOnLccNodeTractionControllerConfig: TOnLccNodeMessageWithTrainObject;
-    FOnLccNodeTractionControllerQuery: TOnLccNodeMessageWithTrainObject;
-    FOnLccNodeTractionListenerAttach: TOnLccNodeListenerAttach;
-    FOnLccNodeTractionListenerDetach: TOnLccNodeListenerDetach;
-    FOnLccNodeTractionListenerQuery: TOnLccNodeListenerQuery;
-    FOnLccNodeTractionManage: TOnLccNodeMessageWithReply;
-    FOnLccNodeTractionQueryFunction: TOnLccNodeMessageWithTrainObject;
-    FOnLccNodeTractionQuerySpeed: TOnLccNodeMessageWithTrainObject;
-    FOnLccNodeVerifiedNodeID: TOnLccNodeMessage;
-    FOnLccMessageSend: TOnMessageEvent;
-    FOnLccTractionUpdateListenerCount: TOnLccTractionUpdateListenerCount;
-    FOnLccTractionUpdateSNIP: TOnLccTractionUpdateSNIP;
-    FOnLccTractionUpdateTrainSNIP: TOnLccTractionUpdateTrainSNIP;
-    FOnTrainInformationChange: TOnTrainInformationChange;
-    FOnTrainRegisteringChange: TOnTrainRegisteringChange;
-    {$IFDEF DELPHI}
-    FNodes: TObjectList<TLccNode>;
-    {$ELSE}
-    FNodes: TObjectList;
-    {$ENDIF}
+    FOnAliasReset: TOnLccNodeMessage;
+    FOnLccNodeMessageCallBack: TOnLccNodeMessageCallBack;
+    FOnNodeAliasIDChanged: TOnLccNodeMessage;
+    FOnNodeCDI: TOnLccNodeMessage;
+    FOnNodeConfigMemAddressSpaceInfoReply: TOnLccNodeMessage;
+    FOnNodeConfigMemOptionsReply: TOnLccNodeMessage;
+    FOnNodeConfigMemReadReply: TOnLccNodeMessage;
+    FOnNodeConfigMemWriteReply: TOnLccNodeMessage;
+    FOnNodeConsumerIdentified: TOnLccNodeMessageReply;
+    FOnNodeCreate: TOnLccNodeMessage;
+    FOnNodeDatagramReply: TOnLccNodeMessage;
+    FOnNodeDestroy: TOnLccNodeMessage;
+    FOnNodeIDChanged: TOnLccNodeMessage;
+    FOnNodeInitializationComplete: TOnLccNodeMessage;
+    FOnNodeLogin: TOnLccNodeMessage;
+    FOnNodeOptionalInteractionRejected: TOnLccNodeMessageReply;
+    FOnNodeProducerIdentified: TOnLccNodeMessageReply;
+    FOnNodeProtocolIdentifyReply: TOnLccNodeMessageReply;
+    FOnNodeRemoteButtonReply: TOnLccNodeMessageReply;
+    FOnNodeSimpleNodeIdentReply: TOnLccNodeMessageReply;
+    FOnNodeTractionControllerChanged: TOnLccNodeMessageCallBack;
+    FOnNodeTractionControllerChanging: TOnLccNodeMessageCallBack;
+    FOnNodeTractionControllerAssign: TOnLccNodeMessageCallBack;
+    FOnNodeTractionControllerRelease: TOnLccNodeMessageCallBack;
+    FOnNodeTractionControllerQuery: TOnLccNodeMessageCallBack;
+    FOnNodeTractionEmergencyStop: TOnLccNodeMessageCallBack;
+    FOnNodeTractionListenerAttach: TOnLccNodeMessageCallBack;
+    FOnNodeTractionListenerDetach: TOnLccNodeMessageCallBack;
+    FOnNodeTractionListenerQuery: TOnLccNodeMessageCallBack;
+    FOnNodeTractionManageRelease: TOnLccNodeMessageCallBack;
+    FOnNodeTractionManageReserve: TOnLccNodeMessageCallBack;
+    FOnNodeTractionQueryFunction: TOnLccNodeMessageCallBack;
+    FOnNodeTractionQuerySpeed: TOnLccNodeMessageCallBack;
+    FOnNodeTractionSetSpeed: TOnLccNodeMessageCallBack;
+    FOnNodeTractionTrainSNIP: TOnLccNodeMessageCallBack;
+    FOnNodeVerifiedNodeID: TOnLccNodeMessageReply;
+    FReceiveMessageServerThread: TReceiveMessageServerThread;
     FWorkerMessage: TLccMessage;
+
+
     function GetNode(Index: Integer): TLccNode;
   protected
-    procedure DoAliasIDChanged(LccNode: TLccNode); virtual;               //*
-    procedure DoCANAliasMapReset(LccNode: TLccNode); virtual;             //*
-    procedure DoCDIRead(LccNode: TLccNode); virtual;
-    procedure DoConfigMemAddressSpaceInfoReply(LccNode: TLccNode; AddressSpace: Byte); virtual;
-    procedure DoConfigMemOptionsReply(LccNode: TLccNode); virtual;
-    procedure DoConfigMemReadReply(LccNode: TLccNode); virtual;
-    procedure DoConfigMemWriteReply(LccNode: TLccNode); virtual;
-    procedure DoCreateLccNode(LccNode: TLccNode); virtual;     //*
-    procedure DoLogInNode(LccNode: TLccNode); virtual;         //*
-    procedure DoLogOutNode(LccNode: TLccNode); virtual;
-    procedure DoConsumerIdentify(LccNode: TLccNode; LccMessage: TLccMessage; var DoDefault: Boolean);
-    procedure DoConsumerIdentified(LccNode: TLccNode; LccMessage: TLccMessage; var Event: TEventID; State: TEventState); virtual;
-    procedure DoDatagramReply(LccNode: TLccNode); virtual;
-    procedure DoDestroyLccNode(LccNode: TLccNode); virtual;   //*
-    procedure DoFDI(LccNode: TLccNode); virtual;
-    procedure DoFunctionConfiguration(LccNode: TLccNode); virtual;
-    procedure DoInitializationComplete(LccNode: TLccNode); virtual;   //*
-    procedure DoNodeIDChanged(LccNode: TLccNode); virtual;                  //*
-    procedure DoOptionalInteractionRejected(LccNode: TLccNode); virtual;
-    procedure DoProducerIdentify(LccNode: TLccNode; LccMessage: TLccMessage; var DoDefault: Boolean);
-    procedure DoProducerIdentified(LccNode: TLccNode; LccMessage: TLccMessage; var Event: TEventID; State: TEventState); virtual;
-    procedure DoProtocolIdentifyReply(LccNode: TLccNode); virtual;
-    procedure DoRemoteButtonReply(LccNode: TLccNode); virtual;
-    procedure DoSimpleNodeIdentReply(LccNode: TLccNode); virtual;
-    procedure DoSimpleTrainNodeIdentReply(LccNode: TLccNode); virtual;
 
-    procedure DoTractionQuerySpeed(LccNode: TLccNode; TrainObject: TLccTrainObject); virtual;
-    procedure DoTractionQueryFunction(LccNode: TLccNode; TrainObject: TLccTrainObject); virtual;
-    procedure DoTractionControllerAssign(LccNode: TLccNode; TrainObject: TLccTrainObject); virtual;
-    procedure DoTractionControllerQuery(LccNode: TLccNode; TrainObject: TLccTrainObject); virtual;
-    procedure DoTractionControllerChangedNotify(LccNode: TLccNode; TrainObject: TLccTrainObject); virtual;
+    // INodeManagerCallbacks
+    procedure DoAliasIDChanged(LccNode: TLccNode);     // Check
+    procedure DoAliasMappingChange(LccNode: TLccNode; AnAliasMapping: TLccAliasMapping; IsMapped: Boolean);  // Check
+    procedure DoAliasReset(LccNode: TLccNode);
+    procedure DoCDIRead(LccNode: TLccNode);    // TODO  Necessary?
+    procedure DoConfigMemAddressSpaceInfoReply(LccNode: TLccNode);   // TODO  Necessary?
+    procedure DoConfigMemOptionsReply(LccNode: TLccNode);   // TODO  Necessary?
+    procedure DoConfigMemReadReply(LccNode: TLccNode);  // TODO  Necessary?
+    procedure DoConfigMemWriteReply(LccNode: TLccNode);  // TODO  Necessary?
+    procedure DoConsumerIdentified(LccNode: TLccNode; LccMessage: TLccMessage); // Check
+    procedure DoCreateLccNode(LccNode: TLccNode);   // Check
+    procedure DoDatagramReply(LccNode: TLccNode);   // TODO Necessary?
+    procedure DoDestroyLccNode(LccNode: TLccNode);  // Check
+    procedure DoInitializationComplete(LccNode: TLccNode);  // Check
+    procedure DoLogInNode(LccNode: TLccNode);   // Check
+    procedure DoNodeIDChanged(LccNode: TLccNode);  // Check
+    procedure DoOptionalInteractionRejected(LccNode: TLccNode; LccMessage: TLccMessage);  // Check
+    procedure DoProducerIdentified(LccNode: TLccNode; LccMessage: TLccMessage);   // Check
+    procedure DoProtocolIdentifyReply(LccNode: TLccNode; LccMessage: TLccMessage); // TODO  Necessary?
+    procedure DoRemoteButtonReply(LccNode: TLccNode; LccMessage: TLccMessage);  // TODO  Necessary?
+    procedure DoSimpleNodeIdentReply(LccNode: TLccNode; LccMessage: TLccMessage); // Check
+    procedure DoVerifiedNodeID(LccNode: TLccNode; LccMessage: TLccMessage);
 
-    procedure DoTractionListenerAttach(LccNode: TLccNode; Listener: TNodeID; Flags: Byte); virtual;
-    procedure DoTractionListenerDetach(LccNode: TLccNode; Listener: TNodeID; Flags: Byte); virtual;
-    procedure DoTractionListenerQuery(LccNode: TLccNode; Index: Integer); virtual;
 
-    procedure DoTractionManage(LccNode: TLccNode; LccMessage: TLccMessage; IsReply: Boolean); virtual;
-    procedure DoTractionUpdateSNIP(LccNode: TLccNode; TrainObject: TLccTrainObject); virtual;
-    procedure DoTractionUpdateTrainSNIP(LccNode: TLccNode; TrainObject: TLccTrainObject); virtual;
-    procedure DoTractionUpdateListenerCount(LccNode: TLccNode; TrainObject: TLccTrainObject); virtual;
-
-    procedure DoVerifiedNodeID(LccNode: TLccNode); virtual;
-    procedure DoAliasMappingChange(LccNode: TLccNode; AnAliasMapping: TLccAliasMapping; IsMapped: Boolean); virtual;
-    procedure DoTrainRegisteringChange(LccNode: TLccNode; TrainObject: TLccTrainObject; IsRegistered: Boolean); virtual;
-    procedure DoTrainInformationChange(LccNode: TLccNode; TrainObject: TLccTrainObject); virtual;
-
-    procedure DoLccMessageSend(Sender: TObject; Message: TLccMessage); virtual;
-    procedure DoLccMessageReceive(Message: TLccMessage); virtual;
+    // INodeManagerTractionCallbacks
+    procedure DoTractionControllerAssign(LccNode: TLccNode; ALccMessage: TLccMessage; var DoDefault: Boolean);
+    procedure DoTractionControllerChange(LccNode: TLccNode; ALccMessage: TLccMessage; var DoDefault: Boolean);
+    procedure DoTractionControllerChangeReply(LccNode: TLccNode; ALccMessage: TLccMessage; var DoDefault: Boolean);
+    procedure DoTractionControllerRelease(LccNode: TLccNode; ALccMessage: TLccMessage; var DoDefault: Boolean);
+    procedure DoTractionControllerQuery(LccNode: TLccNode; ALccMessage: TLccMessage; var DoDefault: Boolean);
+    procedure DoTractionEmergencyStop(LccNode: TLccNode; ALccMessage: TLccMessage; var DoDefault: Boolean);
+    procedure DoTractionListenerAttach(LccNode: TLccNode; ALccMessage: TLccMessage; var DoDefault: Boolean);
+    procedure DoTractionListenerDetach(LccNode: TLccNode; ALccMessage: TLccMessage; var DoDefault: Boolean);
+    procedure DoTractionListenerQuery(LccNode: TLccNode; ALccMessage: TLccMessage; var DoDefault: Boolean);
+    procedure DoTractionManageReserve(LccNode: TLccNode; LccMessage: TLccMessage; var DoDefault: Boolean);
+    procedure DoTractionManageRelease(LccNode: TLccNode; LccMessage: TLccMessage; var DoDefault: Boolean);
+    procedure DoTractionQuerySpeed(LccNode: TLccNode; ALccMessage: TLccMessage; var DoDefault: Boolean);
+    procedure DoTractionQueryFunction(LccNode: TLccNode; ALccMessage: TLccMessage; var DoDefault: Boolean);
+    procedure DoTractionSetFunction(LccNode: TLccNode; ALccMessage: TLccMessage; var DoDefault: Boolean);
+    procedure DoTractionSetSpeed(LccNode: TLccNode; ALccMessage: TLccMessage; var DoDefault: Boolean);
+    procedure DoTractionTrainSNIP(LccNode: TLccNode; ALccMessage: TLccMessage; var DoDefault: Boolean);
 
    public
     // Connection Manager
 
     property GridConnect: Boolean read FGridConnect;
-    {$IFDEF DELPHI}
-    property Nodes: TObjectList<TLccNode> read FNodes write FNodes;
-    {$ELSE}
-    property Nodes: TObjectList read FNodes write FNodes;
-    {$ENDIF}
+
+    property Nodes: TList read FNodes write FNodes;
+
     property Node[Index: Integer]: TLccNode read GetNode; default;
     property WorkerMessage: TLccMessage read FWorkerMessage write FWorkerMessage;
     // May have many places a message needs to go such at TCP, WebSocket, UART, etc
     // Automatically updated through the TLccHardwareConnectionManager when it is created/destroyed
     property HardwarewareConnectionList: TInterfaceList read FHardwarewareConnectionList write FHardwarewareConnectionList;
+    property ReceiveMessageServerThread: TReceiveMessageServerThread read FReceiveMessageServerThread write FReceiveMessageServerThread;
 
     constructor Create(AnOwner: TComponent; GridConnectLink: Boolean); reintroduce; virtual;
     destructor Destroy; override;
@@ -255,339 +255,678 @@ type
     procedure Clear;
     function AddNode(CdiXML: string; AutoLogin: Boolean): TLccNode; virtual;
     function AddNodeByClass(CdiXML: string; NodeClass: TLccNodeClass; AutoLogin: Boolean; NodeID: TNodeID): TLccNode; virtual;
-    function GetNodeCount: Integer;
-    function ExtractNode(Index: Integer): TLccNode;
-    function FindNodeByNodeID(NodeID: TNodeID): TLccNode;
+    function FindNode(ANodeID: TNodeID): TLccNode; overload;
+    function FindNode(AnAlias: Word): TLccNode; overload;
+    function FindInitializedNode: TLccNode;
 
-    procedure LogoutAll;
+    procedure ReleaseAliasAll;
 
-    procedure ProcessMessage(LccMessage: TLccMessage);  // Takes incoming messages and dispatches them to the nodes
     procedure SendMessage(Sender: TObject; LccMessage: TLccMessage); // Outgoing messages are passed through this method, its address is given to Nodes and other objects that need to send messages
-    procedure ReceiveMessage(LccMessage: TLccMessage);  // Takes all incoming messages from all TLccHardwareConnectionManager objects and dispatches them to the nodes and dispaches them to other Connections that are registered
+
 
   published
 
     // Node Management
-    property OnLccNodeCreate: TOnLccNodeMessage read FOnLccNodeCreate write FOnLccNodeCreate;
-    property OnLccNodeDestroy: TOnLccNodeMessage read FOnLccNodeDestroy write FOnLccNodeDestroy;
-    property OnLccNodeLogin: TOnLccNodeMessage read FOnLccNodeLogin write FOnLccNodeLogin;
-    property OnLccNodeLogout: TOnLccNodeMessage read FOnLccNodeLogout write FOnLccNodeLogout;
-    property OnLccNodeIDChanged: TOnLccNodeMessage read FOnLccNodeIDChanged write FOnLccNodeIDChanged;
-    property OnLccNodeInitializationComplete: TOnLccNodeMessage read FOnLccNodeInitializationComplete write FOnLccNodeInitializationComplete;
-    property OnLccNodeVerifiedNodeID: TOnLccNodeMessage read FOnLccNodeVerifiedNodeID write FOnLccNodeVerifiedNodeID;
-    property OnLccNodeProtocolIdentifyReply: TOnLccNodeMessageWithDest read FOnLccNodeProtocolIdentifyReply write FOnLccNodeProtocolIdentifyReply;
+    property OnNodeCreate: TOnLccNodeMessage read FOnNodeCreate write FOnNodeCreate;
+    property OnNodeDestroy: TOnLccNodeMessage read FOnNodeDestroy write FOnNodeDestroy;
+    property OnNodeLogin: TOnLccNodeMessage read FOnNodeLogin write FOnNodeLogin;
+    property OnNodeIDChanged: TOnLccNodeMessage read FOnNodeIDChanged write FOnNodeIDChanged;
+    property OnNodeInitializationComplete: TOnLccNodeMessage read FOnNodeInitializationComplete write FOnNodeInitializationComplete;
+    property OnNodeVerifiedNodeID: TOnLccNodeMessageReply read FOnNodeVerifiedNodeID write FOnNodeVerifiedNodeID;
+    property OnNodeProtocolIdentifyReply: TOnLccNodeMessageReply read FOnNodeProtocolIdentifyReply write FOnNodeProtocolIdentifyReply;
 
     // CAN Node Management
-    property OnLccNodeAliasIDChanged: TOnLccNodeMessage read FOnLccNodeAliasIDChanged write FOnLccNodeAliasIDChanged;
-    property OnLccCANAliasMapReset: TOnLccNodeMessage read FOnLccCANAliasMapReset write FOnLccCANAliasMapReset;
+    property OnNodeAliasIDChanged: TOnLccNodeMessage read FOnNodeAliasIDChanged write FOnNodeAliasIDChanged;
+    property OnAliasReset: TOnLccNodeMessage read FOnAliasReset write FOnAliasReset;
 
     // Configuration Memory Information
-    property OnLccNodeConfigMemAddressSpaceInfoReply: TOnLccNodeConfigMemAddressSpace read FOnLccNodeConfigMemAddressSpaceInfoReply write FOnLccNodeConfigMemAddressSpaceInfoReply;
-    property OnLccNodeConfigMemOptionsReply: TOnLccNodeConfigMem read FOnLccNodeConfigMemOptionsReply write FOnLccNodeConfigMemOptionsReply;
+    property OnNodeConfigMemAddressSpaceInfoReply: TOnLccNodeMessage read FOnNodeConfigMemAddressSpaceInfoReply write FOnNodeConfigMemAddressSpaceInfoReply;
+    property OnNodeConfigMemOptionsReply: TOnLccNodeMessage read FOnNodeConfigMemOptionsReply write FOnNodeConfigMemOptionsReply;
 
     // Configuration Memory Access
-    property OnLccNodeCDI: TOnLccNodeMessageWithDest read FOnLccNodeCDI write FOnLccNodeCDI;
-    property OnLccNodeConfigMemReadReply: TOnLccNodeConfigMem read FOnLccNodeConfigMemReadReply write FOnLccNodeConfigMemReadReply;
-    property OnLccNodeConfigMemWriteReply: TOnLccNodeConfigMem read FOnLccNodeConfigMemWriteReply write FOnLccNodeConfigMemWriteReply;
+    property OnNodeCDI: TOnLccNodeMessage read FOnNodeCDI write FOnNodeCDI;
+    property OnNodeConfigMemReadReply: TOnLccNodeMessage read FOnNodeConfigMemReadReply write FOnNodeConfigMemReadReply;
+    property OnNodeConfigMemWriteReply: TOnLccNodeMessage read FOnNodeConfigMemWriteReply write FOnNodeConfigMemWriteReply;
 
     // Events
-    property OnLccNodeConsumerIdentify: TOnLccNodeEventIdentify read FOnLccNodeConsumerIdentify write FOnLccNodeConsumerIdentify;
-    property OnLccNodeConsumerIdentified: TOnLccNodeEventIdentified read FOnLccNodeConsumerIdentified write FOnLccNodeConsumerIdentified;
-    property OnLccNodeProducerIdentify: TOnLccNodeEventIdentify read FOnLccNodeProducerIdentify write FOnLccNodeProducerIdentify;
-    property OnLccNodeProducerIdentified: TOnLccNodeEventIdentified read FOnLccNodeProducerIdentified write FOnLccNodeProducerIdentified;
+    property OnNodeConsumerIdentified: TOnLccNodeMessageReply read FOnNodeConsumerIdentified write FOnNodeConsumerIdentified;
+    property OnNodeProducerIdentified: TOnLccNodeMessageReply read FOnNodeProducerIdentified write FOnNodeProducerIdentified;
 
     // SNIP
-    property OnLccNodeSimpleNodeIdentReply: TOnLccNodeMessageWithDest read FOnLccNodeSimpleNodeIdentReply write FOnLccNodeSimpleNodeIdentReply;
-    property OnLccNodeSimpleTrainNodeIdentReply: TOnLccNodeMessageWithDest read FOnLccNodeSimpleTrainNodeIdentReply write FOnLccNodeSimpleTrainNodeIdentReply;
+    property OnNodeSimpleNodeIdentReply: TOnLccNodeMessageReply read FOnNodeSimpleNodeIdentReply write FOnNodeSimpleNodeIdentReply;
 
     // Datagrams
-    property OnLccNodeDatagramReply: TOnLccNodeMessageWithDest read FOnLccNodeDatagramReply write FOnLccNodeDatagramReply;
+    property OnNodeDatagramReply: TOnLccNodeMessage read FOnNodeDatagramReply write FOnNodeDatagramReply;
 
-    // Traction
-    property OnLccNodeTractionQuerySpeed: TOnLccNodeMessageWithTrainObject read FOnLccNodeTractionQuerySpeed write FOnLccNodeTractionQuerySpeed;
-    property OnLccNodeTractionQueryFunction: TOnLccNodeMessageWithTrainObject read FOnLccNodeTractionQueryFunction write FOnLccNodeTractionQueryFunction;
-    property OnLccNodeTractionControllerConfig: TOnLccNodeMessageWithTrainObject read FOnLccNodeTractionControllerConfig write FOnLccNodeTractionControllerConfig;
-    property OnLccNodeTractionControllerQuery: TOnLccNodeMessageWithTrainObject read FOnLccNodeTractionControllerQuery write FOnLccNodeTractionControllerQuery;
-    property OnLccNodeTractionControllerChangeNotify: TOnLccNodeMessageWithTrainObject read FOnLccNodeTractionControllerChangeNotify write FOnLccNodeTractionControllerChangeNotify;
-
-    property OnLccNodeTractionManage: TOnLccNodeMessageWithReply read FOnLccNodeTractionManage write FOnLccNodeTractionManage;
-    property OnLccNodeTractionListenerAttach: TOnLccNodeListenerAttach read FOnLccNodeTractionListenerAttach write FOnLccNodeTractionListenerAttach;
-    property OnLccNodeTractionListenerDetach: TOnLccNodeListenerDetach read FOnLccNodeTractionListenerDetach write FOnLccNodeTractionListenerDetach;
-    property OnLccNodeTractionListenerQuery: TOnLccNodeListenerQuery read FOnLccNodeTractionListenerQuery write FOnLccNodeTractionListenerQuery;
-    property OnLccTractionUpdateSNIP: TOnLccTractionUpdateSNIP read FOnLccTractionUpdateSNIP write FOnLccTractionUpdateSNIP;
-    property OnLccTractionUpdateTrainSNIP: TOnLccTractionUpdateTrainSNIP read FOnLccTractionUpdateTrainSNIP write FOnLccTractionUpdateTrainSNIP;
-    property OnLccTractionUpdateListenerCount: TOnLccTractionUpdateListenerCount read FOnLccTractionUpdateListenerCount write FOnLccTractionUpdateListenerCount;
+    // Traction - Raw message overrides
+    property OnNodeTractionQuerySpeed: TOnLccNodeMessageCallBack read FOnNodeTractionQuerySpeed write FOnNodeTractionQuerySpeed;
+    property OnNodeTractionQueryFunction: TOnLccNodeMessageCallBack read FOnNodeTractionQueryFunction write FOnNodeTractionQueryFunction;
+    property OnNodeTractionControllerAssign: TOnLccNodeMessageCallBack read FOnNodeTractionControllerAssign write FOnNodeTractionControllerAssign;
+    property OnNodeTractionControllerChanged: TOnLccNodeMessageCallBack read FOnNodeTractionControllerChanged write FOnNodeTractionControllerChanged;
+    property OnNodeTractionControllerChanging: TOnLccNodeMessageCallBack read FOnNodeTractionControllerChanging write FOnNodeTractionControllerChanging;
+    property OnNodeTractionControllerRelease: TOnLccNodeMessageCallBack read FOnNodeTractionControllerRelease write FOnNodeTractionControllerRelease;
+    property OnNodeTractionControllerQuery: TOnLccNodeMessageCallBack read FOnNodeTractionControllerQuery write FOnNodeTractionControllerQuery;
+    property OnNodeTractionEmergencyStop: TOnLccNodeMessageCallBack read FOnNodeTractionEmergencyStop write FOnNodeTractionEmergencyStop;
+    property OnNodeTractionManageReserve: TOnLccNodeMessageCallBack read FOnNodeTractionManageReserve write FOnNodeTractionManageReserve;
+    property OnNodeTractionManageRelease: TOnLccNodeMessageCallBack read FOnNodeTractionManageRelease write FOnNodeTractionManageRelease;
+    property OnNodeTractionListenerAttach: TOnLccNodeMessageCallBack read FOnNodeTractionListenerAttach write FOnNodeTractionListenerAttach;
+    property OnNodeTractionListenerDetach: TOnLccNodeMessageCallBack read FOnNodeTractionListenerDetach write FOnNodeTractionListenerDetach;
+    property OnNodeTractionListenerQuery: TOnLccNodeMessageCallBack read FOnNodeTractionListenerQuery write FOnNodeTractionListenerQuery;
+    property OnNodeTractionSetFunction: TOnLccNodeMessageCallBack read FOnLccNodeMessageCallBack write FOnLccNodeMessageCallBack;
+    property OnNodeTractionSetSpeed: TOnLccNodeMessageCallBack read FOnNodeTractionSetSpeed write FOnNodeTractionSetSpeed;
+    property OnNodeTractionTrainSNIP: TOnLccNodeMessageCallBack read FOnNodeTractionTrainSNIP write FOnNodeTractionTrainSNIP;
 
     // Traction DCC Functions
-    property OnLccNodeFDI: TOnLccNodeMessageWithDest read FOnLccNodeFDI write FOnLccNodeFDI;
-    property OnLccNodeFunctionConfiguration: TOnLccNodeMessageWithDest read FOnLccNodeFunctionConfiguration write FOnLccNodeFunctionConfiguration;
 
     // Other stuff that may not be useful
-    property OnLccNodeOptionalInteractionRejected: TOnLccNodeMessageWithDest read FOnLccNodeOptionalInteractionRejected write FOnLccNodeOptionalInteractionRejected;
-    property OnLccNodeRemoteButtonReply: TOnLccNodeMessageWithDest read FOnLccNodeRemoteButtonReply write FOnLccNodeRemoteButtonReply;
-
-    // Message Management
-    property OnLccMessageReceive: TOnMessageEvent read FOnLccMessageReceive write FOnLccMessageReceive;
-    property OnLccMessageSend: TOnMessageEvent read FOnLccMessageSend write FOnLccMessageSend;
+    property OnNodeOptionalInteractionRejected: TOnLccNodeMessageReply read FOnNodeOptionalInteractionRejected write FOnNodeOptionalInteractionRejected;
+    property OnNodeRemoteButtonReply: TOnLccNodeMessageReply read FOnNodeRemoteButtonReply write FOnNodeRemoteButtonReply;
 
     // Other interesting stuff
     property OnAliasMappingChange: TOnAliasMappingChange read FOnAliasMappingChange write FOnAliasMappingChange;
-    property OnTrainRegisteringChange: TOnTrainRegisteringChange read FOnTrainRegisteringChange write FOnTrainRegisteringChange;
-    property OnTrainInformationChange: TOnTrainInformationChange read FOnTrainInformationChange write FOnTrainInformationChange;
   end;
 
 
 implementation
 
+{ TReceiveMessageServerThread }
+
+procedure TReceiveMessageServerThread.Execute;
+var
+  LocalMessageList, LocalValidatedMessageList, LocalUnValidatedMessageList, LocalNodeIdentificationForSendMessageList: TList;
+  LocalNodeIDObject: TLccNodeIdentificationObject;
+  i: Integer;
+  {$IFDEF WriteLnDebug}iPrint: Integer;{$ENDIF WriteLnDebug}
+  LocalMessage: TLccMessage;
+begin
+  Messages := TThreadList.Create;
+  LocalValidatedMessageList := TList.Create;
+  LocalUnValidatedMessageList := TList.Create;
+  LocalNodeIdentificationForSendMessageList := TList.Create;
+  WorkerMessage := TLccMessage.Create;
+  {$IFDEF WriteLnDebug}iPrint := 0;{$ENDIF WriteLnDebug}
+  try
+    while not Terminated do
+    begin
+      {$IFDEF WriteLnDebug}
+      if iPrint > 100 then
+      begin
+        WriteLn('LocalValidatedMessageList count: ' + IntToStr(LocalValidatedMessageList.Count));
+        WriteLn('LocalUnValidatedMessageList count: ' + IntToStr(LocalUnValidatedMessageList.Count));
+        WriteLn('NodeIdentificationForSendMessageList count: ' + IntToStr(LocalNodeIdentificationForSendMessageList.Count));
+      end;
+      {$ENDIF WriteLnDebug}
+
+      // First run through the waiting messages.  If there is a Mapping move them in to the
+      // LocalValidatedMessageList and set that slot to nil.  If there is no Mapping then the message is moved to the
+      // UnValidated list to be handled outside the locked list
+      // Need to run from 0 up to maintain order
+      LocalMessageList := Messages.LockList;
+      try
+        {$IFDEF WriteLnDebug}
+        if iPrint > 100 then
+        begin
+          WriteLn('Main MesageList count: ' + IntToStr(LocalMessageList.Count));
+          iPrint := 0;
+        end;
+        Inc(iPrint);
+        {$ENDIF WriteLnDebug}
+        for i := 0 to LocalMessageList.Count - 1 do
+        begin
+          if Owner.GridConnect then
+          begin
+            // Pick out the Verify Message and AMR/AMD to update the AliasMapping Database
+            UpdateGlobalMappings(TLccMessage( LocalMessageList[i]));
+
+            // Pull the message apart and find all the Nodes it requires then test them againt the AliasMapping Database.
+            // If they are not there then push the Alias or NodeID (from a message payload) into the SendMessage Queue and
+            // return false and put them in the LocalUnValidatedMessageList to hold else they get put in the ValidatedList for
+            // sending to the nodes
+            if ValidateMappingsInMessage(TLccMessage( LocalMessageList[i]), LocalNodeIdentificationForSendMessageList) then
+            begin
+              {$IFDEF WriteLnDebug}WriteLn('Message added to the Validated List');{$ENDIF WriteLnDebug}
+              LocalValidatedMessageList.Add(LocalMessageList[i])
+            end else
+            begin
+              {$IFDEF WriteLnDebug}WriteLn('Message added to the UnValidated List');{$ENDIF WriteLnDebug}
+              LocalUnValidatedMessageList.Add(LocalMessageList[i]);
+            end;
+          end else
+          begin  // Raw TCP we move them all
+            LocalValidatedMessageList.Add(LocalMessageList[i]);
+          end;
+        end;
+      finally
+        LocalMessageList.Clear; // All messages have been moved to other places
+        Messages.UnlockList;
+      end;
+
+      // Deliever the messages we moved from the MainList to the LocalValidatedMessageList
+      // ***********************************************************************
+      try
+        for i := 0 to LocalValidatedMessageList.Count - 1 do
+        begin
+          if not Terminated then
+          try
+            try
+              ReceivedMessage := TLccMessage(LocalValidatedMessageList[i]);
+              Synchronize({$IFDEF FPC}@{$ENDIF}ReceiveMessageSyncronize);
+            finally
+              {$IFDEF WriteLnDebug}WriteLn('Message freed from Validated List');{$ENDIF WriteLnDebug}
+              FreeAndNil(FReceivedMessage);
+            end;
+          except
+            {$IFDEF WriteLnDebug}WriteLn('Message freed from Validated List');{$ENDIF WriteLnDebug}
+            FreeAndNil(FReceivedMessage);
+          end;
+        end;
+      finally
+        LocalValidatedMessageList.Clear
+      end;
+      // ***********************************************************************
+
+      // Deliever the requests for VerifyNode we moved from the MainList to the LocalNodeIdentificationForSendMessageList
+      // ***********************************************************************
+      for i := 0 to LocalNodeIdentificationForSendMessageList.Count - 1 do
+      begin
+        if not Terminated then
+        try
+          LocalNodeIDObject := TLccNodeIdentificationObject( LocalNodeIdentificationForSendMessageList[i]);
+
+          // Lets hold this in the list to allow the node to respond.  This will also stop lots of duplicate
+          // call to the same node while waiting for a reply
+          if LocalNodeIDObject.AbandonCount = 0 then
+          begin
+            DestAlias := LocalNodeIDObject.Alias;
+            DestNodeID := LocalNodeIDObject.NodeID;
+            {$IFDEF WriteLnDebug}WriteLn('VerifyNode sent from NodeIdentification List');{$ENDIF WriteLnDebug}
+            Synchronize({$IFDEF FPC}@{$ENDIF}SendMessageSyncronize);
+          end;
+
+          // If abandon then done.. this must be longer than the lifetime of the object that created them
+          if LocalNodeIDObject.AbandonCount > TIMEOUT_NODE_IDENTIFICTION_OBJECT_COUNT then
+          begin
+            {$IFDEF WriteLnDebug}WriteLn('NodeIdentification List item Freed: 0x' + IntToHex(LocalNodeIDObject.Alias, 4));{$ENDIF WriteLnDebug}
+            TObject( LocalNodeIdentificationForSendMessageList[i]).Free;
+            LocalNodeIdentificationForSendMessageList[i] := nil;
+          end;
+
+           LocalNodeIDObject.AbandonCount  := LocalNodeIDObject.AbandonCount  + 1;
+
+        except
+        end;
+      end;
+
+      // Now go through and delete the slot that are empty
+      for i := LocalNodeIdentificationForSendMessageList.Count - 1 downto 0 do
+      begin
+        if LocalNodeIdentificationForSendMessageList[i] = nil then
+          LocalNodeIdentificationForSendMessageList.Delete(i);
+      end;
+
+
+      // ***********************************************************************
+
+      // See if any UnValidated Messages have been validated and the Mappings now exist
+      // TODO:  THESE NEED TO BE COUNTED AND DECIDED WHAT TO DO IF THEY DON'T GET A REPLY FROM THE
+      //        VERIFY ID CALL.  TRY SENDING VERIFY ID A FEW MORE TIMES THEN THROW IT AWAY?
+      // ***********************************************************************
+      if not Terminated then
+      begin
+        if Owner.GridConnect then
+        begin // Must keep order intact so have to run them this way
+          for i := 0 to LocalUnValidatedMessageList.Count - 1 do
+          begin // Sending the NIL for the list will cause just the Message required Nodes to be tested against the Mapping Database
+            if ValidateMappingsInMessage(TLccMessage( LocalUnValidatedMessageList[i]), LocalNodeIdentificationForSendMessageList) then
+            begin // We now have a mapping so move it into the Validated list.
+              {$IFDEF WriteLnDebug}WriteLn('UnValidated Message Mapping found and moved to Validated Message List');{$ENDIF WriteLnDebug}
+              LocalValidatedMessageList.Add(LocalUnValidatedMessageList[i]);
+              LocalUnValidatedMessageList[i] := nil;
+            end else
+            begin
+              LocalMessage := TLccMessage( LocalUnValidatedMessageList[i]);
+              if LocalMessage.AbandonCount > TIMEOUT_UNVALIDATED_MESSAGE_COUNT then
+              begin
+                {$IFDEF WriteLnDebug}WriteLn('UnValidated Message Mapping not found so Abandoned and Freed');{$ENDIF WriteLnDebug}
+                LocalMessage.Free;
+                LocalUnValidatedMessageList[i] := nil;
+              end else
+                LocalMessage.AbandonCount := LocalMessage.AbandonCount + 1;
+            end;
+          end;
+
+          // Now go through and delete the slots that are empty
+          for i := LocalUnValidatedMessageList.Count - 1 downto 0 do
+          begin
+            if LocalUnValidatedMessageList[i] = nil then
+              LocalUnValidatedMessageList.Delete(i);
+          end;
+        end;
+      end;
+      // ***********************************************************************
+
+
+      Sleep(TIMEOUT_RECIEVE_THREAD);
+    end;
+
+  finally
+    LocalMessageList := Messages.LockList;
+    try
+      for i := 0 to LocalMessageList.Count - 1 do
+        TObject(LocalMessageList[i]).Free
+    finally
+      LocalMessageList.Clear;
+      Messages.UnlockList;
+      FreeAndNil(FMessages);
+    end;
+
+    try
+      for i := 0 to LocalValidatedMessageList.Count - 1 do
+        TObject(LocalValidatedMessageList[i]).Free
+    finally
+      LocalValidatedMessageList.Clear;
+      FreeAndNil(LocalValidatedMessageList);
+      LocalValidatedMessageList.Free;
+    end;
+
+    LocalNodeIdentificationForSendMessageList.Clear;
+    FreeAndNil(LocalNodeIdentificationForSendMessageList);
+
+    WorkerMessage.Free;
+  end;
+end;
+
+procedure TReceiveMessageServerThread.ReceiveMessageSyncronize;
+// This is called through Syncronize... The main Message Queue is not locked so more messages can be added
+// but this will dead lock here and messages to the nodes in the application will starve plus you can't
+// Send a message then wait here for it.. it will get placed in the main Message Queue but this won't be called
+// until it returns.
+var
+  i: Integer;
+  LocalSourceNode: TLccNode;
+begin
+  LocalSourceNode := nil;
+  if Owner.GridConnect then
+    LocalSourceNode := Owner.FindNode(ReceivedMessage.CAN.SourceAlias)
+  else
+    LocalSourceNode := Owner.FindNode(ReceivedMessage.SourceID);
+
+  // SourceNode may be nil if the message is not from one of our nodes but that is Ok
+  // and this test still is correct... the message needs to be sent to all our nodes
+  for i := 0 to Owner.Nodes.Count - 1 do
+  begin
+    // Don't send the message back to the node that created it
+    if LocalSourceNode <> TLccNode(Owner.Nodes[i]) then
+      TLccNode(Owner.Nodes[i]).ProcessMessage(ReceivedMessage)
+  end;
+end;
+
+procedure TReceiveMessageServerThread.SendMessageSyncronize;
+var
+  LocalInitiailizedNode: TLccNode;
+begin
+  // Find a Node to use as the Source of the message... it does not really matter
+  // who that is.
+  LocalInitiailizedNode := Owner.FindInitializedNode;
+
+  if Assigned(LocalInitiailizedNode) then
+  begin
+    // Either field could be valid, Alias or NodeID
+    if DestAlias > 0 then
+    begin // NOTICE: This only works with GridConnect since the DestNodeID is unknown and only the Alias is valid here
+      WorkerMessage.LoadVerifyNodeIDAddressed(LocalInitiailizedNode.NodeID, LocalInitiailizedNode.AliasID, DestNodeID, DestAlias, NULL_NODE_ID);
+      Owner.SendMessage(LocalInitiailizedNode, WorkerMessage);
+    end else
+    if not NullNodeID(DestNodeID) then
+    begin // Here we know the full NodeID but not the Alias so we use this form
+      WorkerMessage.LoadVerifyNodeID(LocalInitiailizedNode.NodeID, LocalInitiailizedNode.AliasID, DestNodeID);
+      Owner.SendMessage(LocalInitiailizedNode, WorkerMessage);
+    end;
+  end;
+end;
+
+procedure TReceiveMessageServerThread.UpdateGlobalMappings(AMessage: TLccMessage);
+var
+  LocalNodeID: TNodeID;
+begin
+  case AMessage.CAN.MTI of
+    MTI_CAN_AMR :
+      begin
+        AliasServer.MarkForRemovalByAlias(AMessage.CAN.SourceAlias);
+      end;
+    MTI_CAN_AMD :
+      begin
+        LocalNodeID := NULL_NODE_ID;
+        AliasServer.AddMapping(AMessage.CAN.SourceAlias, AMessage.ExtractDataBytesAsNodeID(0, LocalNodeID));
+      end;
+  end;
+
+  case AMessage.MTI of
+    MTI_VERIFIED_NODE_ID_NUMBER,
+    MTI_INITIALIZATION_COMPLETE :
+      begin
+        LocalNodeID := NULL_NODE_ID;
+        AliasServer.AddMapping(AMessage.CAN.SourceAlias, AMessage.ExtractDataBytesAsNodeID(0, LocalNodeID));
+      end;
+  end;
+end;
+
+function TReceiveMessageServerThread.ValidateMappingsInMessage(AMessage: TLccMessage; ANodeIdentificationForSendMessageList: TList): Boolean;
+var
+  LocalNodeIdentificationObjectList: TLccNodeIdentificationObjectList;
+  LocalAliasMapping: TLccAliasMapping;
+  i: Integer;
+begin
+  Result := True;
+
+  // CAN messages includes messages for allocating the alias so we can't expect a valid
+  // alias under all conditions for CAN messages... just ignore them and let them do their job.
+  if not AMessage.IsCAN then
+  begin
+    // Have the messages extract all the nodes that it will require to be processed
+    LocalNodeIdentificationObjectList := AMessage.ExtractNodeIdentifications(True);
+
+    // Run through all these Nodes
+    for i := 0 to LocalNodeIdentificationObjectList.Count - 1 do
+    begin
+      // An index may not be valid... i.e. if a node ID is carried in an event there won't be a destination
+      if LocalNodeIdentificationObjectList[i].Valid then
+      begin
+        // See if the mapping is in the Alias Server. May have the Alias or a full NodeID from a payload
+        if LocalNodeIdentificationObjectList[i].Alias <> 0 then
+          LocalAliasMapping := AliasServer.FindMapping(LocalNodeIdentificationObjectList[i].Alias)
+        else
+        if not NullNodeID(LocalNodeIdentificationObjectList[i].NodeID) then
+          LocalAliasMapping := AliasServer.FindMapping(LocalNodeIdentificationObjectList[i].NodeID)
+        else
+          raise ENodeIdentificationObjectIsNull.Create('TReceiveMessageServerThread.ValidateMapping: Received Message Alias/Node Extractions failed');
+
+
+        if Assigned(LocalAliasMapping) then
+        begin  // If we have a mapping then backload the message with the values
+          case i of
+            0 :
+              begin
+                AMessage.SourceID := LocalAliasMapping.NodeID;
+                AMessage.CAN.SourceAlias := LocalAliasMapping.NodeAlias;
+              end;
+            1 :
+              begin
+                AMessage.DestID := LocalAliasMapping.NodeID;
+                AMessage.CAN.DestAlias := LocalAliasMapping.NodeAlias;
+              end;
+          end;
+        end else
+        begin // Mapping did not exist
+          {$IFDEF WriteLnDebug}
+      {    AliasServer.WriteMapping('Cound not find Mapping at Message Position: ' +
+            IntToStr(i) +
+            ' - Alias' +
+            IntToHex(LocalNodeIdentificationObjectList[i].Alias, 4) + ' ID: ' +
+            NodeIDToString(LocalNodeIdentificationObjectList[i].NodeID, True),
+            nil);  }
+          {$ENDIF}
+
+          // Load it up in the SendMessage Queue to send a Verify node
+          if not IsDuplicateNodeIdentificationObject(ANodeIdentificationForSendMessageList, LocalNodeIdentificationObjectList[i]) then
+          begin
+            {$IFDEF WriteLnDebug}WriteLn('New NodeIDObject added to NodeIdentificationObjectList');{$ENDIF}
+            ANodeIdentificationForSendMessageList.Add(LocalNodeIdentificationObjectList[i].Clone);
+          end;
+
+          Result := False;
+        end;
+      end;
+    end;
+  end;
+end;
+
+function TReceiveMessageServerThread.IsDuplicateNodeIdentificationObject(ANodeIdentificationObjectList: TList; ATestNodeIDObject: TLccNodeIdentificationObject): Boolean;
+var
+  i: Integer;
+  LocalNodeIDObject: TLccNodeIdentificationObject;
+begin
+  Result := False;
+  for i := 0 to ANodeIdentificationObjectList.Count - 1 do
+  begin
+    LocalNodeIDObject := TLccNodeIdentificationObject(ANodeIdentificationObjectList[i]);
+    if (LocalNodeIDObject.NodeID[0] = ATestNodeIDObject.NodeID[0]) and (LocalNodeIDObject.NodeID[1] = ATestNodeIDObject.NodeID[1]) and (LocalNodeIDObject.Alias = ATestNodeIDObject.Alias) then
+    begin
+      Result := True;
+      Break
+    end;
+  end;
+end;
+
+procedure TReceiveMessageServerThread.AddMessage(AMessage: TLccMessage);
+var
+  LocalList: TList;
+begin
+  LocalList := Messages.LockList;
+  try
+    LocalList.Add(AMessage.Clone);
+  finally
+    Messages.UnlockList;
+  end;
+end;
+
 { TLccNodeManager }
 
 procedure TLccNodeManager.DoAliasIDChanged(LccNode: TLccNode);
 begin
-  if Assigned(OnLccNodeAliasIDChanged) then
-    OnLccNodeAliasIDChanged(Self, LccNode);
+  if Assigned(OnNodeAliasIDChanged) then
+    OnNodeAliasIDChanged(Self, LccNode);
 end;
 
-procedure TLccNodeManager.DoCANAliasMapReset(LccNode: TLccNode);
+procedure TLccNodeManager.DoAliasReset(LccNode: TLccNode);
 begin
-   if Assigned(FOnLccCANAliasMapReset) then
-     FOnLccCANAliasMapReset(Self, LccNode);
+   if Assigned(FOnAliasReset) then
+     FOnAliasReset(Self, LccNode);
 end;
 
 procedure TLccNodeManager.DoCDIRead(LccNode: TLccNode);
 begin
-  if Assigned(OnLccNodeCDI) then
-    OnLccNodeCDI(Self, LccNode)
+  if Assigned(OnNodeCDI) then
+    OnNodeCDI(Self, LccNode)
 end;
 
-procedure TLccNodeManager.DoConfigMemAddressSpaceInfoReply(LccNode: TLccNode;
-  AddressSpace: Byte);
+procedure TLccNodeManager.DoConfigMemAddressSpaceInfoReply(LccNode: TLccNode);
 begin
- if Assigned(OnLccNodeConfigMemAddressSpaceInfoReply) then
-   OnLccNodeConfigMemAddressSpaceInfoReply(Self, LccNode, AddressSpace);
+ if Assigned(OnNodeConfigMemAddressSpaceInfoReply) then
+   OnNodeConfigMemAddressSpaceInfoReply(Self, LccNode);
 end;
 
 procedure TLccNodeManager.DoConfigMemOptionsReply(LccNode: TLccNode);
 begin
-  if Assigned(OnLccNodeConfigMemOptionsReply) then
-    OnLccNodeConfigMemOptionsReply(Self, LccNode);
+  if Assigned(OnNodeConfigMemOptionsReply) then
+    OnNodeConfigMemOptionsReply(Self, LccNode);
 end;
 
 procedure TLccNodeManager.DoConfigMemReadReply(LccNode: TLccNode);
 begin
-  if Assigned(OnLccNodeConfigMemReadReply) then
-    OnLccNodeConfigMemReadReply(Self, LccNode);
+  if Assigned(OnNodeConfigMemReadReply) then
+    OnNodeConfigMemReadReply(Self, LccNode);
 end;
 
 procedure TLccNodeManager.DoConfigMemWriteReply(LccNode: TLccNode);
 begin
-  if Assigned(OnLccNodeConfigMemWriteReply) then
-    OnLccNodeConfigMemWriteReply(Self, LccNode);
+  if Assigned(OnNodeConfigMemWriteReply) then
+    OnNodeConfigMemWriteReply(Self, LccNode);
 end;
 
 procedure TLccNodeManager.DoCreateLccNode(LccNode: TLccNode);
 begin
-  if Assigned(OnLccNodeCreate) then
-    OnLccNodeCreate(Self, LccNode)
+  if Assigned(OnNodeCreate) then
+    OnNodeCreate(Self, LccNode)
 end;
 
-procedure TLccNodeManager.DoConsumerIdentified(LccNode: TLccNode;
-  LccMessage: TLccMessage; var Event: TEventID; State: TEventState);
+procedure TLccNodeManager.DoConsumerIdentified(LccNode: TLccNode; LccMessage: TLccMessage);
 begin
-  if Assigned(OnLccNodeConsumerIdentified) then
-    OnLccNodeConsumerIdentified(Self, LccNode, LccMessage, Event, State);
-end;
-
-procedure TLccNodeManager.DoConsumerIdentify(LccNode: TLccNode;
-  LccMessage: TLccMessage; var DoDefault: Boolean);
-begin
-  if Assigned(OnLccNodeConsumerIdentify) then
-    OnLccNodeConsumerIdentify(Self, LccNode, LccMessage, DoDefault);
+  if Assigned(OnNodeConsumerIdentified) then
+    OnNodeConsumerIdentified(Self, LccNode, LccMessage);
 end;
 
 procedure TLccNodeManager.DoDatagramReply(LccNode: TLccNode);
 begin
-  if Assigned(OnLccNodeDatagramReply) then
-    OnLccNodeDatagramReply(Self, LccNode);
+  if Assigned(OnNodeDatagramReply) then
+    OnNodeDatagramReply(Self, LccNode);
 end;
 
 procedure TLccNodeManager.DoDestroyLccNode(LccNode: TLccNode);
 begin
-  if Assigned(OnLccNodeDestroy) then
-    OnLccNodeDestroy(Self, LccNode);
-end;
-
-procedure TLccNodeManager.DoFDI(LccNode: TLccNode);
-begin
-  if Assigned(OnLccNodeFDI) then
-    OnLccNodeFDI(Self, LccNode)
-end;
-
-procedure TLccNodeManager.DoFunctionConfiguration(LccNode: TLccNode);
-begin
-  if Assigned(OnLccNodeFunctionConfiguration) then
-    OnLccNodeFunctionConfiguration(Self, LccNode)
+  if Assigned(OnNodeDestroy) then
+    OnNodeDestroy(Self, LccNode);
 end;
 
 procedure TLccNodeManager.DoInitializationComplete(LccNode: TLccNode);
 begin
-  if Assigned(OnLccNodeInitializationComplete) then
-    OnLccNodeInitializationComplete(Self, LccNode);
-end;
-
-procedure TLccNodeManager.DoLccMessageReceive(Message: TLccMessage);
-begin
-  if Assigned(OnLccMessageReceive) then
-    OnLccMessageReceive(Self, Message);
-end;
-
-procedure TLccNodeManager.DoLccMessageSend(Sender: TObject; Message: TLccMessage);
-begin
-  if Assigned(OnLccMessageSend) then
-    OnLccMessageSend(Sender, Message);
+  if Assigned(OnNodeInitializationComplete) then
+    OnNodeInitializationComplete(Self, LccNode);
 end;
 
 procedure TLccNodeManager.DoLogInNode(LccNode: TLccNode);
 begin
-  if Assigned(OnLccNodeLogin) then
-    OnLccNodeLogin(Self, LccNode);
-end;
-
-procedure TLccNodeManager.DoLogOutNode(LccNode: TLccNode);
-begin
-  if Assigned(OnLccNodeLogout) then
-    OnLccNodeLogout(Self, LccNode);
+  if Assigned(OnNodeLogin) then
+    OnNodeLogin(Self, LccNode);
 end;
 
 procedure TLccNodeManager.DoNodeIDChanged(LccNode: TLccNode);
 begin
-  if Assigned(OnLccNodeIDChanged) then
-    OnLccNodeIDChanged(Self, LccNode);
+  if Assigned(OnNodeIDChanged) then
+    OnNodeIDChanged(Self, LccNode);
 end;
 
-procedure TLccNodeManager.DoOptionalInteractionRejected(LccNode: TLccNode);
+procedure TLccNodeManager.DoOptionalInteractionRejected(LccNode: TLccNode; LccMessage: TLccMessage);
 begin
-  if Assigned(OnLccNodeOptionalInteractionRejected) then
-    OnLccNodeOptionalInteractionRejected(Self, LccNode);
+  if Assigned(OnNodeOptionalInteractionRejected) then
+    OnNodeOptionalInteractionRejected(Self, LccNode, LccMessage);
 end;
 
-procedure TLccNodeManager.DoProducerIdentified(LccNode: TLccNode;
-  LccMessage: TLccMessage; var Event: TEventID; State: TEventState);
+procedure TLccNodeManager.DoProducerIdentified(LccNode: TLccNode; LccMessage: TLccMessage);
 begin
-  if Assigned(OnLccNodeProducerIdentified) then
-    OnLccNodeProducerIdentified(Self, LccNode, LccMessage, Event, State);
+  if Assigned(OnNodeProducerIdentified) then
+    OnNodeProducerIdentified(Self, LccNode, LccMessage);
 end;
 
-procedure TLccNodeManager.DoProducerIdentify(LccNode: TLccNode;
-  LccMessage: TLccMessage; var DoDefault: Boolean);
+procedure TLccNodeManager.DoProtocolIdentifyReply(LccNode: TLccNode; LccMessage: TLccMessage);
 begin
-  if Assigned(OnLccNodeProducerIdentify) then
-    OnLccNodeProducerIdentify(Self, LccNode, LccMessage, DoDefault);
+  if Assigned(OnNodeProtocolIdentifyReply) then
+    OnNodeProtocolIdentifyReply(Self, LccNode, LccMessage);
 end;
 
-procedure TLccNodeManager.DoProtocolIdentifyReply(LccNode: TLccNode);
+procedure TLccNodeManager.DoRemoteButtonReply(LccNode: TLccNode; LccMessage: TLccMessage);
 begin
-  if Assigned(OnLccNodeProtocolIdentifyReply) then
-    OnLccNodeProtocolIdentifyReply(Self, LccNode);
+  if Assigned(OnNodeRemoteButtonReply) then
+    OnNodeRemoteButtonReply(Self, LccNode, LccMessage);
 end;
 
-procedure TLccNodeManager.DoRemoteButtonReply(LccNode: TLccNode);
+procedure TLccNodeManager.DoSimpleNodeIdentReply(LccNode: TLccNode; LccMessage: TLccMessage);
 begin
-  if Assigned(OnLccNodeRemoteButtonReply) then
-    OnLccNodeRemoteButtonReply(Self, LccNode);
+  if Assigned(OnNodeSimpleNodeIdentReply) then
+    OnNodeSimpleNodeIdentReply(Self, LccNode, LccMessage);
 end;
 
-procedure TLccNodeManager.DoSimpleNodeIdentReply(LccNode: TLccNode);
+procedure TLccNodeManager.DoTractionQuerySpeed(LccNode: TLccNode; ALccMessage: TLccMessage; var DoDefault: Boolean);
 begin
-  if Assigned(OnLccNodeSimpleNodeIdentReply) then
-    OnLccNodeSimpleNodeIdentReply(Self, LccNode);
+  if Assigned(OnNodeTractionQuerySpeed) then
+    OnNodeTractionQuerySpeed(Self, LccNode, ALccMessage, DoDefault);
 end;
 
-procedure TLccNodeManager.DoSimpleTrainNodeIdentReply(LccNode: TLccNode);
+procedure TLccNodeManager.DoTractionQueryFunction(LccNode: TLccNode; ALccMessage: TLccMessage; var DoDefault: Boolean);
 begin
-  if Assigned(OnLccNodeSimpleTrainNodeIdentReply) then
-    OnLccNodeSimpleTrainNodeIdentReply(Self, LccNode);
+  if Assigned(OnNodeTractionQueryFunction) then
+    OnNodeTractionQueryFunction(Self, LccNode, ALccMessage, DoDefault);
 end;
 
-procedure TLccNodeManager.DoTractionQuerySpeed(LccNode: TLccNode; TrainObject: TLccTrainObject);
+procedure TLccNodeManager.DoTractionSetFunction(LccNode: TLccNode; ALccMessage: TLccMessage; var DoDefault: Boolean);
 begin
-  if Assigned(OnLccNodeTractionQuerySpeed) then
-    OnLccNodeTractionQuerySpeed(Self, LccNode, TrainObject);
+  if Assigned(OnNodeTractionSetFunction) then
+    OnNodeTractionSetFunction(Self, LccNode, ALccMessage, DoDefault);
 end;
 
-procedure TLccNodeManager.DoTractionQueryFunction(LccNode: TLccNode; TrainObject: TLccTrainObject);
+procedure TLccNodeManager.DoTractionSetSpeed(LccNode: TLccNode; ALccMessage: TLccMessage; var DoDefault: Boolean);
 begin
-  if Assigned(OnLccNodeTractionQueryFunction) then
-    OnLccNodeTractionQueryFunction(Self, LccNode, TrainObject);
+  if Assigned(OnNodeTractionSetSpeed) then
+    OnNodeTractionSetSpeed(Self, LccNode, ALccMessage, DoDefault);
+
 end;
 
-procedure TLccNodeManager.DoTractionControllerAssign(LccNode: TLccNode; TrainObject: TLccTrainObject);
+procedure TLccNodeManager.DoTractionTrainSNIP(LccNode: TLccNode; ALccMessage: TLccMessage; var DoDefault: Boolean);
 begin
-  if Assigned(OnLccNodeTractionControllerConfig) then
-    OnLccNodeTractionControllerConfig(Self, LccNode, TrainObject);
+  if Assigned(OnNodeTractionTrainSNIP) then
+    OnNodeTractionTrainSNIP(Self, LccNode, ALccMessage, DoDefault);
 end;
 
-procedure TLccNodeManager.DoTractionControllerQuery(LccNode: TLccNode; TrainObject: TLccTrainObject);
+procedure TLccNodeManager.DoTractionControllerAssign(LccNode: TLccNode; ALccMessage: TLccMessage; var DoDefault: Boolean);
 begin
-  if Assigned(OnLccNodeTractionControllerQuery) then
-    OnLccNodeTractionControllerQuery(Self, LccNode, TrainObject);
+  if Assigned(OnNodeTractionControllerAssign) then
+    OnNodeTractionControllerAssign(Self, LccNode, ALccMessage, DoDefault);
 end;
 
-procedure TLccNodeManager.DoTractionControllerChangedNotify(LccNode: TLccNode; TrainObject: TLccTrainObject);
+procedure TLccNodeManager.DoTractionControllerRelease(LccNode: TLccNode;ALccMessage: TLccMessage; var DoDefault: Boolean);
 begin
-  if Assigned(OnLccNodeTractionControllerChangeNotify) then
-    OnLccNodeTractionControllerChangeNotify(Self, LccNode, TrainObject);
+  if Assigned(OnNodeTractionControllerRelease) then
+    OnNodeTractionControllerRelease(Self, LccNode, ALccMessage, DoDefault);
 end;
 
-procedure TLccNodeManager.DoTractionListenerAttach(LccNode: TLccNode;
-  Listener: TNodeID; Flags: Byte);
+procedure TLccNodeManager.DoTractionControllerQuery(LccNode: TLccNode; ALccMessage: TLccMessage; var DoDefault: Boolean);
 begin
-  if Assigned(OnLccNodeTractionListenerAttach) then
-    OnLccNodeTractionListenerAttach(Self, LccNode, Listener, Flags);
+  if Assigned(OnNodeTractionControllerQuery) then
+    OnNodeTractionControllerQuery(Self, LccNode, ALccMessage, DoDefault);
 end;
 
-procedure TLccNodeManager.DoTractionListenerDetach(LccNode: TLccNode;
-  Listener: TNodeID; Flags: Byte);
+procedure TLccNodeManager.DoTractionEmergencyStop(LccNode: TLccNode; ALccMessage: TLccMessage; var DoDefault: Boolean);
 begin
-  if Assigned(OnLccNodeTractionListenerDetach) then
-    OnLccNodeTractionListenerDetach(Self, LccNode, Listener, Flags);
+  if Assigned(OnNodeTractionEmergencyStop) then
+    OnNodeTractionEmergencyStop(Self, LccNode, ALccMessage, DoDefault);
 end;
 
-procedure TLccNodeManager.DoTractionListenerQuery(LccNode: TLccNode;
-  Index: Integer);
+procedure TLccNodeManager.DoTractionControllerChangeReply(LccNode: TLccNode; ALccMessage: TLccMessage; var DoDefault: Boolean);
 begin
-  if Assigned(OnLccNodeTractionListenerQuery) then
-     OnLccNodeTractionListenerQuery(Self, LccNode, Index);
+  if Assigned(OnNodeTractionControllerChanged) then
+    OnNodeTractionControllerChanged(Self, LccNode, ALccMessage, DoDefault);
 end;
 
-procedure TLccNodeManager.DoTractionManage(LccNode: TLccNode;
-  LccMessage: TLccMessage; IsReply: Boolean);
+procedure TLccNodeManager.DoTractionControllerChange(LccNode: TLccNode; ALccMessage: TLccMessage; var DoDefault: Boolean);
 begin
-  if Assigned(OnLccNodeTractionManage) then
-    OnLccNodeTractionManage(Self, LccNode, LccMessage, IsReply);
+  if Assigned(OnNodeTractionControllerChanging) then
+    OnNodeTractionControllerChanging(Self, LccNode, ALccMessage, DoDefault);
 end;
 
-procedure TLccNodeManager.DoTractionUpdateSNIP(LccNode: TLccNode; TrainObject: TLccTrainObject);
+procedure TLccNodeManager.DoTractionListenerAttach(LccNode: TLccNode; ALccMessage: TLccMessage; var DoDefault: Boolean);
 begin
-  if Assigned(OnLccTractionUpdateSNIP) then
-    OnLccTractionUpdateSNIP(Self, LccNode, TrainObject);
+  if Assigned(OnNodeTractionListenerAttach) then
+    OnNodeTractionListenerAttach(Self, LccNode, ALccMessage, DoDefault);
 end;
 
-procedure TLccNodeManager.DoTractionUpdateTrainSNIP(LccNode: TLccNode; TrainObject: TLccTrainObject);
+procedure TLccNodeManager.DoTractionListenerDetach(LccNode: TLccNode; ALccMessage: TLccMessage; var DoDefault: Boolean);
 begin
-  if Assigned(OnLccTractionUpdateTrainSNIP) then
-    OnLccTractionUpdateTrainSNIP(Self, LccNode, TrainObject);
+  if Assigned(OnNodeTractionListenerDetach) then
+    OnNodeTractionListenerDetach(Self, LccNode, ALccMessage, DoDefault);
 end;
 
-procedure TLccNodeManager.DoTractionUpdateListenerCount(LccNode: TLccNode; TrainObject: TLccTrainObject);
+procedure TLccNodeManager.DoTractionListenerQuery(LccNode: TLccNode; ALccMessage: TLccMessage; var DoDefault: Boolean);
 begin
-  if Assigned(OnLccTractionUpdateListenerCount) then
-    OnLccTractionUpdateListenerCount(Self, LccNode, TrainObject);
+  if Assigned(OnNodeTractionListenerQuery) then
+     OnNodeTractionListenerQuery(Self, LccNode, ALccMessage, DoDefault);
 end;
 
-procedure TLccNodeManager.DoVerifiedNodeID(LccNode: TLccNode);
+procedure TLccNodeManager.DoTractionManageReserve(LccNode: TLccNode; LccMessage: TLccMessage; var DoDefault: Boolean);
 begin
-  if Assigned(OnLccNodeVerifiedNodeID) then
-    OnLccNodeVerifiedNodeID(Self, LccNode);
+  if Assigned(OnNodeTractionManageReserve) then
+    OnNodeTractionManageReserve(Self, LccNode, LccMessage, DoDefault);
+end;
+
+procedure TLccNodeManager.DoTractionManageRelease(LccNode: TLccNode; LccMessage: TLccMessage; var DoDefault: Boolean);
+begin
+  if Assigned(OnNodeTractionManageRelease) then
+    OnNodeTractionManageRelease(Self, LccNode, LccMessage, DoDefault);
+end;
+
+procedure TLccNodeManager.DoVerifiedNodeID(LccNode: TLccNode;LccMessage: TLccMessage);
+begin
+  if Assigned(OnNodeVerifiedNodeID) then
+    OnNodeVerifiedNodeID(Self, LccNode, LccMessage);
 end;
 
 procedure TLccNodeManager.DoAliasMappingChange(LccNode: TLccNode; AnAliasMapping: TLccAliasMapping; IsMapped: Boolean);
@@ -596,56 +935,18 @@ begin
     OnAliasMappingChange(Self, LccNode, AnAliasMapping, IsMapped);
 end;
 
-procedure TLccNodeManager.DoTrainRegisteringChange(LccNode: TLccNode; TrainObject: TLccTrainObject; IsRegistered: Boolean);
-begin
-  if Assigned(OnTrainRegisteringChange) then
-    OnTrainRegisteringChange(Self, LccNode, TrainObject, IsRegistered);
-end;
-
-procedure TLccNodeManager.DoTrainInformationChange(LccNode: TLccNode; TrainObject: TLccTrainObject);
-begin
-  if Assigned(OnTrainInformationChange) then
-    OnTrainInformationChange(Self, LccNode, TrainObject);
-end;
-
-function TLccNodeManager.ExtractNode(Index: Integer): TLccNode;
-begin
-  Result := nil;
-  if Index < Nodes.Count then
-  begin
-    Result := Nodes[Index] as TLccNode;
-    Nodes.Delete(Index);
-  end;
-end;
-
-function TLccNodeManager.FindNodeByNodeID(NodeID: TNodeID): TLccNode;
-var
-  i: Integer;
-begin
-  Result := nil;
-  for i := 0 to Nodes.Count - 1 do
-  begin
-    if EqualNodeID(NodeID, Node[i].NodeID, False) then
-    begin
-      Result := Node[i];
-      Break
-    end;
-  end;
-end;
-
 constructor TLccNodeManager.Create(AnOwner: TComponent; GridConnectLink: Boolean);
 begin
   inherited Create(AnOwner);
-  {$IFDEF DELPHI}
-    FNodes := TObjectList<TLccNode>.Create;
-  {$ELSE}
-    FNodes := TObjectList.Create;
-  {$ENDIF}
-  FNodes.OwnsObjects := False;
+  FNodes := TList.Create;
 
   FGridConnect := GridConnectLink;
   FHardwarewareConnectionList := TInterfaceList.Create;
   FWorkerMessage := TLccMessage.Create;
+  FReceiveMessageServerThread := TReceiveMessageServerThread.Create(True);
+  FReceiveMessageServerThread.Owner := Self;
+  FReceiveMessageServerThread.FreeOnTerminate := True;
+  FReceiveMessageServerThread.Suspended := False;
 end;
 
 function TLccNodeManager.AddNode(CdiXML: string; AutoLogin: Boolean): TLccNode;
@@ -672,13 +973,58 @@ begin
   end;
 end;
 
+function TLccNodeManager.FindNode(ANodeID: TNodeID): TLccNode;
+var
+  i: Integer;
+begin
+  Result := nil;
+  for i := 0 to Nodes.Count - 1 do
+  begin
+    if EqualNodeID(ANodeID, TLccNode(Nodes.Items[i]).NodeID, False) then
+    begin
+      Result := TLccNode(Node[i]);
+      Break
+    end;
+  end;
+end;
+
+function TLccNodeManager.FindNode(AnAlias: Word): TLccNode;
+var
+  i: Integer;
+begin
+  Result := nil;
+  for i := 0 to Nodes.Count - 1 do
+  begin
+    if AnAlias = TLccNode(Nodes.Items[i]).AliasID then
+    begin
+      Result := TLccNode(Node[i]);
+      Break
+    end;
+  end;
+end;
+
+function TLccNodeManager.FindInitializedNode: TLccNode;
+var
+  i: Integer;
+begin
+  Result := nil;
+  for i := 0 to Nodes.Count - 1 do
+  begin
+    if TLccNode( Nodes[i]).Initialized then
+    begin
+      Result := TLccNode( Nodes[i]);
+      Break;
+    end;
+  end;
+end;
+
 destructor TLccNodeManager.Destroy;
 begin
-  LogoutAll;
   Clear;
   FNodes.Free;
   FreeAndNil(FWorkerMessage);
   FreeAndNil(FHardwarewareConnectionList);
+  ReceiveMessageServerThread.Terminate;
   inherited Destroy;
 end;
 
@@ -687,9 +1033,12 @@ var
   i: Integer;
 begin
   try
-    LogoutAll;
-    for i := 0 to FNodes.Count - 1 do
-      TObject( FNodes[i]).Free;
+    // for large number of nodes this is faster as we don't delay for each release as it
+    // would if we just called Free on all the nodes and let them each delay 100ms
+    // One delay after all are released is much faster
+    ReleaseAliasAll;
+    for i := 0 to Nodes.Count - 1 do
+      TLccNode(Nodes.Items[i]).Free;
   finally
     Nodes.Clear;
   end;
@@ -697,71 +1046,35 @@ end;
 
 function TLccNodeManager.GetNode(Index: Integer): TLccNode;
 begin
+  Result := nil;
   if Index < Nodes.Count then
-    Result := Nodes[Index] as TLccNode
-  else
-    Result := nil;
+    Result := TLccNode(Nodes.Items[Index]);
 end;
 
-function TLccNodeManager.GetNodeCount: Integer;
-begin
-  Result := Nodes.Count;
-end;
-
-procedure TLccNodeManager.LogoutAll;
+procedure TLccNodeManager.ReleaseAliasAll;
 var
   i: Integer;
 begin
   for i := 0 to Nodes.Count - 1 do
-  begin
-    // Maybe an OnLogout property?
-    TLccNode( Nodes[i]).Logout;
-  end;
-end;
-
-procedure TLccNodeManager.ProcessMessage(LccMessage: TLccMessage);
-var
-  i: Integer;
-begin
-  DoLccMessageReceive(LccMessage);
-  for i := 0 to Nodes.Count - 1 do
-    ( Nodes[i] as TLccNode).ProcessMessage(LccMessage);
+    TLccNode(Nodes.Items[i]).ReleaseAlias(0);
+  Sleep(500);  // Wait for the AMR messages to be sent
 end;
 
 procedure TLccNodeManager.SendMessage(Sender: TObject; LccMessage: TLccMessage);
 var
-  i: Integer;
+  iHardwareConnection: Integer;
 begin
   // Send the message to the interfaces (Ethernet, WebSocket, UART, ect)
-  for i := 0 to HardwarewareConnectionList.Count -1 do
-    (HardwarewareConnectionList[i] as IHardwareConnectionManagerLink).SendMessage(LccMessage);
+  for iHardwareConnection := 0 to HardwarewareConnectionList.Count - 1 do
+    if (HardwarewareConnectionList[iHardwareConnection] as IHardwareConnectionManagerLink).IsLccLink then
+      (HardwarewareConnectionList[iHardwareConnection] as IHardwareConnectionManagerLink).SendMessage(LccMessage);
 
-
-  // Send the messages to all the other virtual nodes.
-  if Sender is TLccNode then
-  begin
-    for i := 0 to Nodes.Count - 1 do
-    begin
-
- //     Assert(not NullNodeID( (Node[i] as TLccNode).NodeID ));
- //     Assert(not NullNodeID( LccMessage.SourceID ));
-
-      // don't sent it back to itself but deliver it to all the other virtual owned nodes
-      if not EqualNode(Node[i].NodeID, Node[i].AliasID, LccMessage.SourceID, LccMessage.CAN.SourceAlias, True) then
-        Node[i].ProcessMessage(LccMessage);
-    end;
-  end;
-
-  // Allow app to see it
-  DoLccMessageSend(Sender, LccMessage);
-end;
-
-procedure TLccNodeManager.ReceiveMessage(LccMessage: TLccMessage);
-begin
-  // Do I need to dispatch to other HardwareConnection (like a Hub?)
-  // Should the node manager be the hub?  It may make more sense as there should only be
-  // one Node Manager per application.
-  ProcessMessage(LccMessage);
+  // Send the messages to all the other virtual nodes where this would be the receiving end of the sendmessage
+  // Never filter these messages.  For the internal callback system to work correctly the internal nodes must
+  // snoop on eachothers messages to keep things like the internal Train data base updated... that does mean there
+  // is some future risk that if a train is found outside of this database the networks must not filter messages
+  // based on where the destinstions segement exists.  The trains messages must be sent to all segments
+  ReceiveMessageServerThread.AddMessage(LccMessage);  // I think this works....
 end;
 
 end.

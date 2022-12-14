@@ -31,12 +31,14 @@ uses
   lcc_gridconnect,
 
   lcc_defines,
-  lcc_node_manager,
+  lcc_node,
   lcc_node_messages,
   lcc_utilities,
   lcc_app_common_settings,
   lcc_common_classes,
-  lcc_ethernet_common;
+  lcc_ethernet_common,
+  lcc_alias_server;
+
 type
   TLccEthernetClient = class;   // Forward
 
@@ -46,12 +48,16 @@ type
     FGridConnectHelper: TGridConnectHelper;
     FidTCPClient: TIdTCPClient;
     FidThreadComponent: TIdThreadComponent;
+    FOwner: TLccEthernetClient;
     protected
       property GridConnectHelper: TGridConnectHelper read FGridConnectHelper write FGridConnectHelper;
+      property Owner: TLccEthernetClient read FOwner write FOwner;
       procedure Execute; override;
+      procedure ReceiveMessage;  // For Syncronize
       procedure OnClientConnected(Sender: TObject);
       procedure OnClientDisconnected(Sender: TObject);
       procedure OnThreadComponentRun(Sender: TIdThreadComponent);
+      procedure SetConnecting(AValue: Boolean); override;
     public
       property idTCPClient: TIdTCPClient read FidTCPClient write FidTCPClient;
       property idThreadComponent: TIdThreadComponent read FidThreadComponent write FidThreadComponent;
@@ -63,11 +69,15 @@ type
   TLccEthernetClient = class(TLccEthernetHardwareConnectionManager)
   private
     FClientThread: TLccEthernetClientThread;
+    FClosingConnection: Boolean;
     { Private declarations }
   protected
     { Protected declarations }
+    property ClosingConnection: Boolean read FClosingConnection write FClosingConnection;
+
     function IsLccLink: Boolean; override;
     function GetConnected: Boolean; override;
+    function GetConnecting: Boolean; override;
   public
     { Public declarations }
     property ClientThread: TLccEthernetClientThread read FClientThread write FClientThread;
@@ -75,7 +85,6 @@ type
     function OpenConnection(ConnectionInfo: TLccHardwareConnectionInfo): TLccConnectionThread; override;
     procedure CloseConnection; override;
     procedure SendMessage(ALccMessage: TLccMessage); override;
-    procedure ReceiveMessage; override;
   published
     { Published declarations }
   end;
@@ -91,67 +100,106 @@ end;
 function TLccEthernetClient.GetConnected: Boolean;
 begin
   Result := False;
-  if Assigned(ClientThread) and Assigned(ClientThread.IdTCPClient) then
-    Result := ClientThread.idTCPClient.Connected;
+  CriticalSectionEnter;
+  try
+    if Assigned(ClientThread) then
+      if Assigned(ClientThread.IdTCPClient) then
+        Result := ClientThread.idTCPClient.Connected;
+  finally
+    CriticalSectionLeave;
+  end;
+end;
+
+function TLccEthernetClient.GetConnecting: Boolean;
+begin
+  Result := False;
+  CriticalSectionEnter;
+  try
+    if Assigned(ClientThread) then
+      Result := ClientThread.Connecting;
+  finally
+    CriticalSectionLeave;
+  end;
 end;
 
 procedure TLccEthernetClient.SendMessage(ALccMessage: TLccMessage);
 begin
   inherited SendMessage(ALccMessage);
-  if Assigned(ClientThread) then
-    ClientThread.OutgoingGridConnect.Add(ALccMessage.ConvertToGridConnectStr(#10, False));
-end;
-
-procedure TLccEthernetClient.ReceiveMessage;
-begin
-  if Assigned(ClientThread) then
-  begin
-    NodeManager.ReceiveMessage(ClientThread.TryReceiveWorkerMessage);
-    DoReceiveMessage(ClientThread.TryReceiveWorkerMessage);
+  CriticalSectionEnter;
+  try
+    if Assigned(ClientThread) then
+      ClientThread.AddToOutgoingBuffer(ALccMessage);
+  finally
+    CriticalSectionLeave;
   end;
 end;
 
 function TLccEthernetClient.OpenConnection(ConnectionInfo: TLccHardwareConnectionInfo): TLccConnectionThread;
 begin
+  CloseConnection;
   inherited OpenConnection(ConnectionInfo as TLccEthernetConnectionInfo);
   Result := TLccEthernetClientThread.Create(True, Self, ConnectionInfo);
-  FClientThread := Result as TLccEthernetClientThread;
+  ClientThread := Result as TLccEthernetClientThread;
+  ClientThread.Owner := Self;
+  ClientThread.FreeOnTerminate := True;
   ClientThread.Suspended := False;
 end;
+
 procedure TLccEthernetClient.CloseConnection;
 var
   TimeCount: Integer;
 begin
-  inherited CloseConnection;
-  TimeCount := 0;
-  ClientThread.Terminate;
-  while ClientThread.Running do
+  if not ClosingConnection then  // Stop reentrant from that nasty ProcessMessage
   begin
-    {$IFNDEF FPC_CONSOLE_APP}Application.ProcessMessages;{$ELSE}CheckSynchronize();{$ENDIF}  // Pump the timers
-    Inc(TimeCount);
-    Sleep(100);
-    if TimeCount = 10 then Break // Something went really wrong
+    ClosingConnection := True;
+    inherited CloseConnection;
+
+    CriticalSectionEnter;
+    try
+      if Assigned(ClientThread) then
+      begin
+        TimeCount := 0;
+        ClientThread.Terminate;
+        while ClientThread.Running do
+        begin
+          // Needed to make Syncronize function if it is called during the thread shut down for notifications
+          {$IFNDEF FPC_CONSOLE_APP}Application.ProcessMessages;{$ELSE}CheckSynchronize();{$ENDIF}  // Pump the timers
+          Inc(TimeCount);
+          Sleep(100);
+          if TimeCount = 10 then Break // Something went really wrong
+        end;
+      end;
+    finally
+      ClosingConnection := False;
+      CriticalSectionLeave;
+    end
   end;
-  FreeAndNil(FClientThread);
 end;
+
 { TLccEthernetClientThread }
 constructor TLccEthernetClientThread.Create(CreateSuspended: Boolean;
   AnOwner: TLccHardwareConnectionManager;
   AConnectionInfo: TLccHardwareConnectionInfo);
 begin
   inherited;
-
+//  WriteLn('TLccEthernetClientThread Create');
 end;
 
 destructor TLccEthernetClientThread.Destroy;
 begin
-
+//  WriteLn('TLccEthernetClientThread Destroy');
   inherited;
 end;
 
 procedure TLccEthernetClientThread.Execute;
+var
+  i: Integer;
+  TxStr: string;
+  TxList: TStringList;
+  DynamicByteArray: TLccDynamicByteArray;
 begin
   FRunning := True;
+  Connecting := True;
   HandleSendConnectionNotification(lcsConnecting);
   GridConnectHelper := TGridConnectHelper.Create;
   idTCPClient := TIdTCPClient.Create();
@@ -173,27 +221,59 @@ begin
     idTCPClient.Connect((ConnectionInfo as TLccEthernetConnectionInfo).ListenerIP, (ConnectionInfo as TLccEthernetConnectionInfo).ListenerPort);
     try
       try
+        Connecting := False;
+
         while not IsTerminated and idTCPClient.Connected do
         begin
-          if ConnectionInfo.Gridconnect then   // Handle the Client using GridConnect
-            TryTransmitGridConnect(idTCPClient.IOHandler)
-          else
-            TryTransmitTCPProtocol(idTCPClient.IOHandler);
-          Sleep(1);
+
+          if (ConnectionInfo as TLccEthernetConnectionInfo).GridConnect then
+          begin
+            // Get all the strings from the outgoing buffer into a single concatinated string
+            TxStr := '';
+            TxList := OutgoingGridConnect.LockList;
+            try
+              for i := 0 to TxList.Count - 1 do
+                TxStr := TxStr + TxList[i] + #10;
+              TxList.Clear;
+            finally
+              OutgoingGridConnect.UnlockList;
+            end;
+
+            // Outside of the threaded string list (so not to block the main thread sending more messages)
+            // dispatch this string to all the connections
+            if TxStr <> '' then
+            begin
+              if idTCPClient.IOHandler.Connected then
+                idTCPClient.IOHandler.WriteLn(TxStr);
+            end;
+          end else
+          begin
+            // Get a block of raw TCP bytes
+            DynamicByteArray := nil;
+            OutgoingCircularArray.LockArray;
+            try
+              if OutgoingCircularArray.Count > 0 then
+                OutgoingCircularArray.PullArray(DynamicByteArray);
+            finally
+              OutgoingCircularArray.UnLockArray;
+            end;
+
+            // Outside of the threaded Byte Array (so not to block the main thread sending more messages)
+            // dispatch this data to all the connections
+            if Length(DynamicByteArray) > 0 then
+            begin
+              if idTCPClient.IOHandler.Connected then
+                idTCPClient.IOHandler.Write(TIdBytes( DynamicByteArray), Length(DynamicByteArray));
+            end;
+          end;
+
+          Sleep(50);
         end;
       finally
         HandleSendConnectionNotification(lcsDisconnecting);
-        if ConnectionInfo.Gridconnect then
-          TryTransmitGridConnect(idTCPClient.IOHandler) // Flush last message it
-        else
-          TryTransmitTCPProtocol(idTCPClient.IOHandler);;
-      end;
+      end
     finally
-      while not idTCPClient.IOHandler.InputBufferIsEmpty do
-      begin
-        IndySleep(50); // empty the buffer in the call back
-      end;
-   //   IndySleep(2000);
+      Connecting := False;
       idThreadComponent.Active := False;
       idTCPClient.Disconnect;
       HandleSendConnectionNotification(lcsDisconnected);
@@ -205,10 +285,24 @@ begin
   except   // Indy uses exceptions to trigger problems
     on E: EIdException do
     begin
+      Connecting := False;
       ConnectionInfo.ErrorMessage := E.Message;
       Synchronize({$IFDEF FPC}@{$ENDIF}ErrorMessage);
     end;
   end;
+
+  // We free on end so set us to nil in the Manager
+  Owner.CriticalSectionEnter;
+  try
+    Owner.FClientThread := nil;
+  finally
+    Owner.CriticalSectionLeave;
+  end;
+end;
+
+procedure TLccEthernetClientThread.ReceiveMessage;
+begin
+  (Owner as TLccEthernetClient).DoReceiveMessage(WorkerMessage);
 end;
 
 procedure TLccEthernetClientThread.OnClientConnected(Sender: TObject);
@@ -227,6 +321,9 @@ procedure TLccEthernetClientThread.OnThreadComponentRun(Sender: TIdThreadCompone
 var
   AString: String;
   AChar: AnsiChar;
+  iString: Integer;
+  GridConnectStrPtr: PGridConnectString;
+  MessageStr: String;
 begin
   AString := '';
   while not IdTCPClient.IOHandler.InputBufferIsEmpty and IdTCPClient.IOHandler.Connected do
@@ -237,14 +334,55 @@ begin
 
   if AString <> '' then
   begin
-    if ConnectionInfo.Gridconnect then
-      TryReceiveGridConnect(AString, GridConnectHelper)
-    else
-      TryReceiveTCPProtocol(AString)
+    for iString := 1 to Length(AString) do
+    begin
+      // Take the incoming characters and try to make a valid gridconnect message
+      GridConnectStrPtr := nil;
+      if GridConnectHelper.GridConnect_DecodeMachine(Ord(AString[iString]), GridConnectStrPtr) then
+      begin
+        // Have a valid gridconnect message
+        MessageStr := GridConnectBufferToString(GridConnectStrPtr^);
+        WorkerMessage.LoadByGridConnectStr(MessageStr);
+
+        // Message may only be part of a larger string of messages to make up a full LCC message.
+        // This call will concatinate these partial Lcc message and return with a fully qualified
+        // Lcc message.
+        case GridConnectMessageAssembler.IncomingMessageGridConnect(WorkerMessage) of
+          imgcr_True :
+            begin
+              Owner.NodeManager.ReceiveMessageServerThread.AddMessage(WorkerMessage);
+              try
+                Synchronize({$IFDEF FPC}@{$ENDIF}ReceiveMessage);  // WorkerMessage contains the message
+              except
+              end;
+            end;
+          imgcr_ErrorToSend :
+            begin
+     //         ConnectionInfo.LccMessage.CopyToTarget(WorkerMessage);
+     //         Synchronize({$IFDEF FPC}@{$ENDIF}RequestErrorMessageSent);
+            end;
+          imgcr_False,
+          imgcr_UnknownError :
+            begin
+
+            end;
+        end;
+      end;
+    end;
   end;
     // https://stackoverflow.com/questions/64593756/delphi-rio-indy-tcpserver-high-cpu-usage
     // There is another way to do this but with this simple program this is fine
   IndySleep(50);
+end;
+
+procedure TLccEthernetClientThread.SetConnecting(AValue: Boolean);
+begin
+  Owner.CriticalSectionEnter;
+  try
+    inherited SetConnecting(AValue);
+  finally
+    Owner.CriticalSectionLeave;
+  end;
 end;
 
 end.

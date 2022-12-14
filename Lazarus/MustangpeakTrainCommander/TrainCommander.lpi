@@ -25,7 +25,7 @@
           </Target>
           <SearchPaths>
             <IncludeFiles Value="$(ProjOutDir)"/>
-            <OtherUnitFiles Value="..\..\Target-PC;..\..\Target-PC\HardwareConnection;..\..\Target-Common;..\..\Target-PC\HardwareConnection\Indy_Lcc\Core;..\..\Target-PC\HardwareConnection\Indy_Lcc\Protocols;..\..\Target-PC\HardwareConnection\Indy_Lcc\System"/>
+            <OtherUnitFiles Value="..\..\Target-PC;..\..\Target-PC\HardwareConnection;..\..\Target-Common;..\..\Target-PC\HardwareConnection\Indy_Lcc\Core;..\..\Target-PC\HardwareConnection\Indy_Lcc\Protocols;..\..\Target-PC\HardwareConnection\Indy_Lcc\System;..\..\Target-PC\HardwareConnection\TLazSerial"/>
             <UnitOutputDirectory Value="lib\$(TargetCPU)-$(TargetOS)"/>
           </SearchPaths>
           <Conditionals Value="if TargetOS = &apos;darwin&apos; then
@@ -55,6 +55,9 @@ if TargetOS = &apos;linux&apos; then
               <OverflowChecks Value="True"/>
               <StackChecks Value="True"/>
             </Checks>
+            <Optimizations>
+              <OptimizationLevel Value="0"/>
+            </Optimizations>
           </CodeGeneration>
           <Linking>
             <Debugging>
@@ -68,6 +71,13 @@ if TargetOS = &apos;linux&apos; then
               </Win32>
             </Options>
           </Linking>
+          <Other>
+            <CustomOptions Value="-dWriteLnDebug"/>
+            <OtherDefines Count="2">
+              <Define0 Value="WriteLnDebug"/>
+              <Define1 Value="WriteLnDebugReceivedMessages"/>
+            </OtherDefines>
+          </Other>
         </CompilerOptions>
       </Item2>
       <Item3 Name="Release">
@@ -135,7 +145,7 @@ if TargetOS = &apos;linux&apos; then
         <PackageName Value="LCL"/>
       </Item2>
     </RequiredPackages>
-    <Units Count="8">
+    <Units Count="9">
       <Unit0>
         <Filename Value="TrainCommander.lpr"/>
         <IsPartOfProject Value="True"/>
@@ -176,6 +186,10 @@ if TargetOS = &apos;linux&apos; then
         <Filename Value="..\..\Target-Common\lcc_common_objects.pas"/>
         <IsPartOfProject Value="True"/>
       </Unit7>
+      <Unit8>
+        <Filename Value="..\..\Target-Common\lcc_node_traindatabase.pas"/>
+        <IsPartOfProject Value="True"/>
+      </Unit8>
     </Units>
   </ProjectOptions>
   <CompilerOptions>

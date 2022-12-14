@@ -30,24 +30,27 @@ type
 
   TLccTrainControllerResult = (tcr_Ok, tcr_ControllerRefused, tcr_TrainRefused);
 
-  { TLccTrainControllerObject }
+  TLccTractionServer = class; // forward
 
-  TLccTrainControllerObject = class
+  { TLccTractionControllerObject }
+
+  TLccTractionControllerObject = class
   private
-    FRequestingNodeID: TNodeID;
-    FRequestResult: TLccTrainControllerResult;
+    FNodeID: TNodeID;
+    FFlags: Byte;
   public
-    property RequestingNodeID: TNodeID read FRequestingNodeID write FRequestingNodeID;
-    property RequestResult: TLccTrainControllerResult read FRequestResult write FRequestResult;
+    property Node: TNodeID read FNodeID write FNodeID;
+    property Flags: Byte read FFlags write FFlags;
   end;
 
-  { TLccTrainObject }
+  { TLccTractionObject }
 
-  TLccTrainObject = class
+  TLccTractionObject = class
   private
-    FController: TLccTrainControllerObject;
+    FController: TLccTractionControllerObject;
     FNodeAlias: Word;
     FNodeID: TNodeID;
+    FServer: TLccTractionServer;
     FSNIP: TLccSNIPObject;
     FSpeedActual: THalfFloat;
     FSpeedCommanded: THalfFloat;
@@ -67,51 +70,115 @@ type
     property SpeedStatusEmergencyStop: Boolean read FSpeedStatusEmergencyStop;
     property SNIP: TLccSNIPObject read FSNIP;
     property TrainSNIP: TLccTrainSNIPObject read FTrainSNIP;
-    property Controller: TLccTrainControllerObject read FController write FController;
+    property Controller: TLccTractionControllerObject read FController write FController;
+    property Server: TLccTractionServer read FServer;
 
-    constructor Create;
+    constructor Create(AServer: TLccTractionServer);
     destructor Destroy; override;
   end;
 
-  { TLccTrainServer }
+  TOnLccServerRegisterChange = procedure(TractionObject: TLccTractionObject; IsRegistered: Boolean) of object;
+  TOnLccServerChange = procedure(TractionObject: TLccTractionObject) of object;
 
-  TLccTrainServer = class
+  { TLccTractionServer }
+
+  TLccTractionServer = class
   private
+    FEnabled: Boolean;
+    FGridConnect: Boolean;
+    FOnEmergencyStopChange: TOnLccServerChange;
+    FOnFunctionChange: TOnLccServerChange;
+    FOnListenerAttach: TOnLccServerChange;
+    FOnListenerDetach: TOnLccServerChange;
+    FOnListenerManageRelease: TOnLccServerChange;
+    FOnListenerManageReserve: TOnLccServerChange;
+    FOnRegisterChange: TOnLccServerRegisterChange;
+    FOnSNIPChange: TOnLccServerChange;
+    FOnSpeedChange: TOnLccServerChange;
+    FOnTrainSNIPChange: TOnLccServerChange;
     {$IFDEF DELPHI}
-    FTrainList: TObjectList<TLccTrainObject>;
+    FList: TObjectList<TLccTractionObject>;
     {$ELSE}
-    FTrainList: TObjectList;
+    FList: TObjectList;
     {$ENDIF}
+    FWorkerMessage: TLccMessage;
+    function GetItem(Index: Integer): TLccTractionObject;
+  protected
+    property WorkerMessage: TLccMessage read FWorkerMessage write FWorkerMessage;
+
+    procedure DoRegisterChange(TractionObject: TLccTractionObject; IsRegistered: Boolean);
+    procedure DoSNIPChange(TractionObject: TLccTractionObject);
+    procedure DoTrainSNIPChange(TractionObject: TLccTractionObject);
+    procedure DoSpeedChange(TractionObject: TLccTractionObject);
+    procedure DoFunctionChange(TractionObject: TLccTractionObject);
+    procedure DoEmergencyStopChange(TractionObject: TLccTractionObject);
+    procedure DoListenerAttach(TractionObject: TLccTractionObject);
+    procedure DoListenerDetach(TractionObject: TLccTractionObject);
+    procedure DoListenerManageReserve(TractionObject: TLccTractionObject);
+    procedure DoListenerManageRelease(TractionObject: TLccTractionObject);
+
+    procedure HandleProducerIdentifiedAll(ALccNode: TObject; SourceMessage: TLccMessage);
+    procedure HandleSimpleNodeInfoReply( SourceMessage: TLccMessage);
+    procedure HandleTractionControllerAssign(SourceMessage: TLccMessage);
+    procedure HandleTractionControllerRelease(SourceMessage: TLccMessage);
+    procedure HandleTractionControllerQuery(SourceMessage: TLccMessage);
+    procedure HandleTractionControllerChangingNotify(SourceMessage: TLccMessage);
+    procedure HandleTractionControllerChangedNotify(SourceMessage: TLccMessage);
+    procedure HandleTractionEStop(SourceMessage: TLccMessage);
+    procedure HandleTractionListenerAttach(SourceMessage: TLccMessage);
+    procedure HandleTractionListenerDetach(SourceMessage: TLccMessage);
+    procedure HandleTractionListenerQuery(SourceMessage: TLccMessage);
+    procedure HandleTractionManageReserve(SourceMessage: TLccMessage);
+    procedure HandleTractionManageRelease(SourceMessage: TLccMessage);
+    procedure HandleTractionSetSpeed(SourceMessage: TLccMessage);
+    procedure HandleTractionSetFunction(SourceMessage: TLccMessage);
+    procedure HandleTractionSimpleTrainInfoReply(SourceMessage: TLccMessage);
+    procedure HandleTractionQuerySpeed(SourceMessage: TLccMessage);
+    procedure HandleTractionQueryFunction(SourceMessage: TLccMessage);
   public
-    constructor Create;
+    property GridConnect: Boolean read FGridConnect;
+
+    constructor Create(IsGridConnect: Boolean);
     destructor Destroy; override;
-    function AddTrainObject(NewNodeID: TNodeID; NewAlias: Word): TLccTrainObject;
-    function RemoveTrainObjectByAlias(TestAlias: Word): TLccTrainObject;
-    function RemoveTrainObjectByNodeID(TestNodeID: TNodeID): TLccTrainObject;
-    function FindTrainObjectByAlias(TestAlias: Word): TLccTrainObject;
-    function FindTrainObjectByNodeID(TestNodeID: TNodeID): TLccTrainObject;
-    function UpdateSNIP(AMessage: TLccMessage): TLccTrainObject;
-    function UpdateTrainSNIP(AMessage: TLccMessage): TLccTrainObject;
-    function UpdateListenerCount(AMessage: TLccMessage): TLccTrainObject;
-    function UpdateSpeed(AMessage: TLccMessage): TLccTrainObject;
-    function UpdateFunction(AMessage: TLccMessage): TLccTrainObject;
-    function UpdateControllerAssign(AMessage: TLccMessage): TLccTrainObject;
-    function UpdateControllerQuery(AMessage: TLccMessage): TLccTrainObject;
+    function Add(NewNodeID: TNodeID; NewAlias: Word): TLccTractionObject;
+    function Remove(TestNodeID: TNodeID): TLccTractionObject;
+    function Find(TestNodeID: TNodeID): TLccTractionObject;
 
     procedure Clear;
 
     {$IFDEF DELPHI}
-    property TrainList: TObjectList<TLccTrainObject> read FTrainList write FTrainList;
+    property List: TObjectList<TLccTractionObject> read FList write FList;
     {$ELSE}
-    property TrainList: TObjectList read FTrainList write FTrainList;
+    property List: TObjectList read FList write FList;
     {$ENDIF}
+
+    property Enabled: Boolean read FEnabled write FEnabled;
+    property Item[Index: Integer]: TLccTractionObject read GetItem; default;
+
+    property OnRegisterChange: TOnLccServerRegisterChange read FOnRegisterChange write FOnRegisterChange;
+    property OnSNIPChange: TOnLccServerChange read FOnSNIPChange write FOnSNIPChange;
+    property OnTrainSNIPChange: TOnLccServerChange read FOnTrainSNIPChange write FOnTrainSNIPChange;
+    property OnSpeedChange: TOnLccServerChange read FOnSpeedChange write FOnSpeedChange;
+    property OnFunctionChange: TOnLccServerChange read FOnFunctionChange write FOnFunctionChange;
+    property OnEmergencyStopChange: TOnLccServerChange read FOnEmergencyStopChange write FOnEmergencyStopChange;
+    property OnListenerAttach: TOnLccServerChange read FOnListenerAttach write FOnListenerAttach;
+    property OnListenerDetach: TOnLccServerChange read FOnListenerDetach write FOnListenerDetach;
+    property OnListenerManageReserve: TOnLccServerChange read FOnListenerManageReserve write FOnListenerManageReserve;
+    property OnListenerManageRelease: TOnLccServerChange read FOnListenerManageRelease write FOnListenerManageRelease;
+
+
+    procedure ProcessMessageLCC(ALccNode: TObject; SourceMessage: TLccMessage); virtual;
   end;
 
 implementation
 
-{ TLccTrainObject }
+uses
+  lcc_alias_server,
+  lcc_node;
 
-function TLccTrainObject.GetFunctions(Index: Integer): Word;
+{ TLccTractionObjectTLccTractionObject }
+
+function TLccTractionObject.GetFunctions(Index: Integer): Word;
 begin
   if (Index > -1) and (Index < MAX_FUNCTIONS) then
     Result := FFunctions[Index]
@@ -119,20 +186,21 @@ begin
     Result := 0
 end;
 
-procedure TLccTrainObject.SetFunctions(Index: Integer; AValue: Word);
+procedure TLccTractionObject.SetFunctions(Index: Integer; AValue: Word);
 begin
    if (Index > -1) and (Index < MAX_FUNCTIONS) then
      FFunctions[Index] := AValue
 end;
 
-constructor TLccTrainObject.Create;
+constructor TLccTractionObject.Create(AServer: TLccTractionServer);
 begin
+  FServer := AServer;
   FSNIP := TLccSNIPObject.Create;
   FTrainSNIP := TLccTrainSNIPObject.Create;
-  FController := TLccTrainControllerObject.Create;
+  FController := TLccTractionControllerObject.Create;
 end;
 
-destructor TLccTrainObject.Destroy;
+destructor TLccTractionObject.Destroy;
 begin
   FreeAndNil(FSNIP);
   FreeAndNil(FTrainSNIP);
@@ -140,93 +208,147 @@ begin
   inherited Destroy;
 end;
 
-{ TLccTrainServer }
+{ TLccTractionServer }
 
-constructor TLccTrainServer.Create;
-begin
-  {$IFDEF DELPHI}
-  FTrainList := TObjectList<TLccTrainObject>.Create(False);
-  {$ELSE}
-  FTrainList := TObjectList.Create(False);
-  {$ENDIF}
-end;
-
-destructor TLccTrainServer.Destroy;
-begin
-  FreeAndNil(FTrainList);
-  inherited Destroy;
-end;
-
-function TLccTrainServer.AddTrainObject(NewNodeID: TNodeID; NewAlias: Word): TLccTrainObject;
-begin
-  Result := TLccTrainObject.Create;
-  TrainList.Add(Result);
-  Result.NodeAlias := NewAlias;
-  Result.NodeID := NewNodeID;
-end;
-
-function TLccTrainServer.RemoveTrainObjectByAlias(TestAlias: Word): TLccTrainObject;
+procedure TLccTractionServer.HandleTractionSimpleTrainInfoReply(SourceMessage: TLccMessage);
 var
-  TrainObject: TLccTrainObject;
+  TractionObject: TLccTractionObject;
+  TrainVersion: Byte;
+  TrainRoadName,
+  TrainClass,
+  TrainRoadNumber,
+  TrainName,
+  TrainManufacturer,
+  TrainOwner: string;
 begin
-  Result := nil;
-  TrainObject := FindTrainObjectByAlias(TestAlias);
-  if Assigned(TrainObject) then
+  TractionObject := Find(SourceMessage.SourceID);
+  if Assigned(TractionObject) then
   begin
-    TrainList.Remove(TrainObject);
-    Result := TrainObject;
+    TrainVersion := 0;
+    TrainRoadName := '';
+    TrainClass := '';
+    TrainRoadNumber := '';
+    TrainName := '';
+    TrainManufacturer := '';
+    TrainOwner := '';
+    SourceMessage.ExtractSimpleTrainNodeIdentInfo(TrainVersion, TrainRoadName, TrainClass, TrainRoadNumber, TrainName, TrainManufacturer, TrainOwner);
+    TractionObject.TrainSNIP.Manufacturer := TrainManufacturer;
+    TractionObject.TrainSNIP.Owner := TrainOwner;
+    TractionObject.TrainSNIP.Roadname := TrainRoadName;
+    TractionObject.TrainSNIP.RoadNumber := TrainRoadNumber;
+    TractionObject.TrainSNIP.TrainClass := TrainClass;
+    TractionObject.TrainSNIP.TrainName := TrainName;
+    TractionObject.TrainSNIP.Version := TrainVersion;
+    TractionObject.TrainSNIP.Valid := True;
+    DoTrainSNIPChange(TractionObject);
   end;
 end;
 
-function TLccTrainServer.RemoveTrainObjectByNodeID(TestNodeID: TNodeID): TLccTrainObject;
-var
-  TrainObject: TLccTrainObject;
+function TLccTractionServer.GetItem(Index: Integer): TLccTractionObject;
 begin
-  Result := nil;
-  TrainObject := FindTrainObjectByNodeID(TestNodeID);
-  if Assigned(TrainObject) then
-  begin
-    TrainList.Remove(TrainObject);
-    Result := TrainObject;
-  end;
+  Result := List[Index] as TLccTractionObject;
 end;
 
-function TLccTrainServer.FindTrainObjectByAlias(TestAlias: Word): TLccTrainObject;
-var
-  i: Integer;
-  TrainObject: TLccTrainObject;
+procedure TLccTractionServer.DoRegisterChange(TractionObject: TLccTractionObject; IsRegistered: Boolean);
 begin
-  Result := nil;
-  for i := 0 to TrainList.Count - 1 do
+  if Assigned(OnRegisterChange) then
+    OnRegisterChange(TractionObject, IsRegistered);
+end;
+
+procedure TLccTractionServer.DoSNIPChange(TractionObject: TLccTractionObject);
+begin
+  if Assigned(OnSNIPChange) then
+    OnSNIPChange(TractionObject);
+end;
+
+procedure TLccTractionServer.DoTrainSNIPChange(TractionObject: TLccTractionObject);
+begin
+  if Assigned(OnTrainSNIPChange) then
+    OnTrainSNIPChange(TractionObject);
+end;
+
+procedure TLccTractionServer.DoSpeedChange(TractionObject: TLccTractionObject);
+begin
+  if Assigned(OnSpeedChange) then
+    OnSpeedChange(TractionObject);
+end;
+
+procedure TLccTractionServer.DoFunctionChange(TractionObject: TLccTractionObject);
+begin
+  if Assigned(OnFunctionChange) then
+    OnFunctionChange(TractionObject);
+end;
+
+procedure TLccTractionServer.DoEmergencyStopChange(TractionObject: TLccTractionObject);
+begin
+  if Assigned(OnEmergencyStopChange) then
+    OnEmergencyStopChange(TractionObject);
+end;
+
+procedure TLccTractionServer.DoListenerAttach(TractionObject: TLccTractionObject);
+begin
+  if Assigned(OnListenerAttach) then
+    OnListenerAttach(TractionObject);
+end;
+
+procedure TLccTractionServer.DoListenerDetach(TractionObject: TLccTractionObject);
+begin
+  if Assigned(OnListenerDetach) then
+    OnListenerDetach(TractionObject);
+end;
+
+procedure TLccTractionServer.DoListenerManageReserve(TractionObject: TLccTractionObject);
+begin
+  if Assigned(OnListenerManageReserve) then
+    OnListenerManageReserve(TractionObject);
+end;
+
+procedure TLccTractionServer.DoListenerManageRelease(TractionObject: TLccTractionObject);
+begin
+  if Assigned(OnListenerManageRelease) then
+    OnListenerManageRelease(TractionObject);
+end;
+
+procedure TLccTractionServer.HandleProducerIdentifiedAll(ALccNode: TObject; SourceMessage: TLccMessage);
+var
+  LocalAliasMapping: TLccAliasMapping;
+  LocalTractionNodeID: TNodeID;
+  LocalTractionObject: TLccTractionObject;
+begin
+  if SourceMessage.TractionIsSearchEvent then
   begin
-    TrainObject := TrainList.Items[i] as TLccTrainObject;
-    if TestAlias = TrainObject.NodeAlias then
+
+  end else
+  if SourceMessage.TractionIsTrainEvent then
+  begin
+    if GridConnect then
     begin
-      Result := TrainObject;
-      Break
-    end;
-  end;
-end;
+      LocalAliasMapping := AliasServer.FindMapping(SourceMessage.CAN.SourceAlias);
+      Assert(Assigned(LocalAliasMapping), 'Could not Assign Node AliasMapping in TLccTrainDatabaseNode.ProcessMessageLCC');
+      LocalTractionNodeID := LocalAliasMapping.NodeID;
+    end else
+      LocalTractionNodeID := SourceMessage.SourceID;
 
-function TLccTrainServer.FindTrainObjectByNodeID(TestNodeID: TNodeID): TLccTrainObject;
-var
-  i: Integer;
-  TrainObject: TLccTrainObject;
-begin
-  Result := nil;
-  for i := 0 to TrainList.Count - 1 do
-  begin
-    TrainObject := TrainList.Items[i] as TLccTrainObject;
-    if EqualNodeID(TestNodeID, TrainObject.NodeID, False) then
+    LocalTractionObject := Find(LocalTractionNodeID);
+    if not Assigned(LocalTractionObject) then
     begin
-      Result := TrainObject;
-      Break
+      LocalTractionObject := Add(SourceMessage.SourceID, SourceMessage.CAN.SourceAlias);
+      DoRegisterChange(LocalTractionObject, True);
     end;
-  end;
+
+    // Get some information about this train
+    WorkerMessage.LoadSimpleNodeIdentInfoRequest(TLccNode( ALccNode).NodeID, TLccNode( ALccNode).AliasID, SourceMessage.SourceID, SourceMessage.CAN.SourceAlias);
+    TLccNode( ALccNode).SendMessageFunc(Self, WorkerMessage);
+    WorkerMessage.LoadSimpleTrainNodeIdentInfoRequest(TLccNode( ALccNode).NodeID, TLccNode( ALccNode).AliasID, SourceMessage.SourceID, SourceMessage.CAN.SourceAlias);
+    TLccNode( ALccNode).SendMessageFunc(Self, WorkerMessage);
+    WorkerMessage.LoadTractionListenerQueryCount(TLccNode( ALccNode).NodeID, TLccNode( ALccNode).AliasID, SourceMessage.SourceID, SourceMessage.CAN.SourceAlias);
+    TLccNode( ALccNode).SendMessageFunc(Self, WorkerMessage);
+  end
 end;
 
-function TLccTrainServer.UpdateSNIP(AMessage: TLccMessage): TLccTrainObject;
+procedure TLccTractionServer.HandleSimpleNodeInfoReply(SourceMessage: TLccMessage);
 var
+  TractionObject: TLccTractionObject;
   Version,
   UserVersion: byte;
   Manufacturer,
@@ -236,8 +358,8 @@ var
   UserName,
   UserDescription: string;
 begin
-  Result := FindTrainObjectByNodeID(AMessage.SourceID);
-  if Assigned(Result) then
+  TractionObject := Find(SourceMessage.SourceID);
+  if Assigned(TractionObject) then
   begin
     Version := 0;
     UserVersion := 0;
@@ -247,119 +369,280 @@ begin
     SoftwareVersion := '';
     UserName := '';
     UserDescription := '';
-    AMessage.ExtractSimpleNodeIdentInfo(Version, Manufacturer, Model, HardwareVersion, SoftwareVersion, UserVersion, UserName, UserDescription);
-    Result.SNIP.Version := Version;
-    Result.SNIP.Manufacturer := Manufacturer;
-    Result.SNIP.Model := Model;
-    Result.SNIP.HardwareVersion := HardwareVersion;
-    Result.SNIP.SoftwareVersion := SoftwareVersion;
-    Result.SNIP.UserVersion := UserVersion;
-    Result.SNIP.UserName := UserName;
-    Result.SNIP.UserDescription := UserDescription;
-    Result.SNIP.Valid := True;
+    SourceMessage.ExtractSimpleNodeIdentInfo(Version, Manufacturer, Model, HardwareVersion, SoftwareVersion, UserVersion, UserName, UserDescription);
+    TractionObject.SNIP.Version := Version;
+    TractionObject.SNIP.Manufacturer := Manufacturer;
+    TractionObject.SNIP.Model := Model;
+    TractionObject.SNIP.HardwareVersion := HardwareVersion;
+    TractionObject.SNIP.SoftwareVersion := SoftwareVersion;
+    TractionObject.SNIP.UserVersion := UserVersion;
+    TractionObject.SNIP.UserName := UserName;
+    TractionObject.SNIP.UserDescription := UserDescription;
+    TractionObject.SNIP.Valid := True;
+    DoSNIPChange(TractionObject);
   end;
 end;
 
-function TLccTrainServer.UpdateTrainSNIP(AMessage: TLccMessage): TLccTrainObject;
+procedure TLccTractionServer.HandleTractionControllerAssign(SourceMessage: TLccMessage);
 var
-  TrainVersion: Byte;
-  TrainRoadName,
-  TrainClass,
-  TrainRoadNumber,
-  TrainName,
-  TrainManufacturer,
-  TrainOwner: string;
+  TractionObject: TLccTractionObject;
 begin
-  Result := FindTrainObjectByNodeID(AMessage.SourceID);
-  if Assigned(Result) then
+  // TODO: This is complicated if the train asks for permission...
+  TractionObject := Find(SourceMessage.DestID);
+  if Assigned(TractionObject) then
   begin
-    TrainVersion := 0;
-    TrainRoadName := '';
-    TrainClass := '';
-    TrainRoadNumber := '';
-    TrainName := '';
-    TrainManufacturer := '';
-    TrainOwner := '';
-    AMessage.ExtractSimpleTrainNodeIdentInfo(TrainVersion, TrainRoadName, TrainClass, TrainRoadNumber, TrainName, TrainManufacturer, TrainOwner);
-    Result.TrainSNIP.Manufacturer := TrainManufacturer;
-    Result.TrainSNIP.Owner := TrainOwner;
-    Result.TrainSNIP.Roadname := TrainRoadName;
-    Result.TrainSNIP.RoadNumber := TrainRoadNumber;
-    Result.TrainSNIP.TrainClass := TrainClass;
-    Result.TrainSNIP.TrainName := TrainName;
-    Result.TrainSNIP.Version := TrainVersion;
-    Result.TrainSNIP.Valid := True;
+    TractionObject.Controller.Flags := SourceMessage.TractionExtractControllerAssignResult;
+    TractionObject.Controller.Node := SourceMessage.TractionExtractControllerNodeID;
   end;
 end;
 
-function TLccTrainServer.UpdateListenerCount(AMessage: TLccMessage): TLccTrainObject;
+procedure TLccTractionServer.HandleTractionControllerRelease(SourceMessage: TLccMessage);
+var
+  TractionObject: TLccTractionObject;
 begin
-  Result := FindTrainObjectByNodeID(AMessage.SourceID);
-  if Assigned(Result) then
+  // TODO: This is complicated if the train asks for permission...
+  TractionObject := Find(SourceMessage.DestID);
+  if Assigned(TractionObject) then
   begin
 
   end;
 end;
 
-function TLccTrainServer.UpdateSpeed(AMessage: TLccMessage): TLccTrainObject;
+procedure TLccTractionServer.HandleTractionControllerQuery(SourceMessage: TLccMessage);
 begin
-  Result := FindTrainObjectByNodeID(AMessage.SourceID);
-  if Assigned(Result) then
+   // Do Nothing: Just a query won't change the database
+end;
+
+procedure TLccTractionServer.HandleTractionControllerChangingNotify(SourceMessage: TLccMessage);
+begin
+  // TODO: This is complicated if the train asks for permission...
+end;
+
+procedure TLccTractionServer.HandleTractionControllerChangedNotify(SourceMessage: TLccMessage);
+begin
+  // TODO: This is complicated if the train asks for permission...
+end;
+
+procedure TLccTractionServer.HandleTractionEStop(SourceMessage: TLccMessage);
+var
+  TractionObject: TLccTractionObject;
+begin
+  TractionObject := Find(SourceMessage.DestID);
+  if Assigned(TractionObject) then
   begin
-    Result.FSpeedSet := AMessage.TractionExtractSetSpeed;
-    Result.FSpeedCommanded := AMessage.TractionExtractCommandedSpeed;
-    Result.FSpeedActual :=  AMessage.TractionExtractActualSpeed;
-    Result.FSpeedStatusEmergencyStop := AMessage.TractionExtractSpeedStatus and TRACTION_SPEED_STATUS_E_STOP = TRACTION_SPEED_STATUS_E_STOP;
+    TractionObject.FSpeedSet := 0;
+    TractionObject.FSpeedCommanded := 0;
+    TractionObject.FSpeedActual :=  0;
+    TractionObject.FSpeedStatusEmergencyStop := True;
+    DoEmergencyStopChange(TractionObject);
   end;
 end;
 
-function TLccTrainServer.UpdateFunction(AMessage: TLccMessage): TLccTrainObject;
+procedure TLccTractionServer.HandleTractionListenerAttach(SourceMessage: TLccMessage);
+var
+  TractionObject: TLccTractionObject;
 begin
-  Result := FindTrainObjectByNodeID(AMessage.SourceID);
-  if Assigned(Result) then
-    Result.Functions[AMessage.TractionExtractFunctionAddress] := AMessage.TractionExtractFunctionValue;
+  TractionObject := Find(SourceMessage.DestID);
+  if Assigned(TractionObject) then
+  begin
+    // User can just read the Listener property in the LccNode (only works with internal trains nodes)
+    DoListenerAttach(TractionObject);
+  end;
 end;
 
-function TLccTrainServer.UpdateControllerAssign(AMessage: TLccMessage): TLccTrainObject;
+procedure TLccTractionServer.HandleTractionListenerDetach(SourceMessage: TLccMessage);
+var
+  TractionObject: TLccTractionObject;
 begin
-  Result := FindTrainObjectByNodeID(AMessage.SourceID);
-  if Assigned(Result) then
+  TractionObject := Find(SourceMessage.DestID);
+  if Assigned(TractionObject) then
   begin
-    case AMessage.TractionExtractControllerAssignResult of
-      TRACTION_CONTROLLER_CONFIG_REPLY_OK :
-        begin
-          Result.Controller.RequestResult := tcr_Ok;
-        end;
-      TRACTION_CONTROLLER_CONFIG_ASSIGN_REPLY_REFUSE_ASSIGNED_CONTROLLER :
-        begin
-          Result.Controller.RequestResult := tcr_ControllerRefused;
-        end;
-      TRACTION_CONTROLLER_CONFIG_ASSIGN_REPLY_REFUSE_TRAIN :
-        begin
-          Result.Controller.RequestResult := tcr_TrainRefused;
-        end;
+    // User can just read the Listener property in the LccNode (only works with internal trains nodes)
+    DoListenerDetach(TractionObject);
+  end;
+end;
+
+procedure TLccTractionServer.HandleTractionListenerQuery(SourceMessage: TLccMessage);
+begin
+  // Do Nothing: Just a query won't change the database
+end;
+
+procedure TLccTractionServer.HandleTractionManageReserve(SourceMessage: TLccMessage);
+var
+  TractionObject: TLccTractionObject;
+begin
+  TractionObject := Find(SourceMessage.DestID);
+  if Assigned(TractionObject) then
+  begin
+    // User can just read the Manage property in the LccNode (only works with internal trains nodes)
+    DoListenerManageReserve(TractionObject);
+  end;
+end;
+
+procedure TLccTractionServer.HandleTractionManageRelease(SourceMessage: TLccMessage);
+var
+  TractionObject: TLccTractionObject;
+begin
+  TractionObject := Find(SourceMessage.DestID);
+  if Assigned(TractionObject) then
+  begin
+    // User can just read the Manage property in the LccNode (only works with internal trains nodes)
+    DoListenerManageRelease(TractionObject);
+  end;
+end;
+
+procedure TLccTractionServer.HandleTractionSetSpeed(SourceMessage: TLccMessage);
+var
+  TractionObject: TLccTractionObject;
+begin
+  TractionObject := Find(SourceMessage.DestID);
+  if Assigned(TractionObject) then
+  begin
+    TractionObject.FSpeedSet := SourceMessage.TractionExtractSetSpeed;
+    TractionObject.FSpeedCommanded := SourceMessage.TractionExtractCommandedSpeed;
+    TractionObject.FSpeedActual :=  SourceMessage.TractionExtractActualSpeed;
+    TractionObject.FSpeedStatusEmergencyStop := SourceMessage.TractionExtractSpeedStatus and TRACTION_SPEED_STATUS_E_STOP = TRACTION_SPEED_STATUS_E_STOP;
+    DoSpeedChange(TractionObject);
+  end;
+end;
+
+procedure TLccTractionServer.HandleTractionSetFunction(SourceMessage: TLccMessage);
+var
+  TractionObject: TLccTractionObject;
+begin
+  TractionObject := Find(SourceMessage.DestID);
+  if Assigned(TractionObject) then
+  begin
+    TractionObject.Functions[SourceMessage.TractionExtractFunctionAddress] := SourceMessage.TractionExtractFunctionValue;
+    DoFunctionChange(TractionObject);
+  end;
+end;
+
+procedure TLccTractionServer.HandleTractionQuerySpeed(SourceMessage: TLccMessage);
+begin
+  // Do Nothing: Just a query won't change the database
+end;
+
+procedure TLccTractionServer.HandleTractionQueryFunction(SourceMessage: TLccMessage);
+begin
+  // Do Nothing: Just a query won't change the database
+end;
+
+constructor TLccTractionServer.Create(IsGridConnect: Boolean);
+begin
+  {$IFDEF DELPHI}
+  FList := TObjectList<TLccTractionObject>.Create(False);
+  {$ELSE}
+  FList := TObjectList.Create(False);
+  {$ENDIF}
+  FWorkerMessage := TLccMessage.Create;
+  FGridConnect := True;
+end;
+
+destructor TLccTractionServer.Destroy;
+begin
+  FreeAndNil(FList);
+  FreeAndNil(FWorkerMessage);
+  inherited Destroy;
+end;
+
+function TLccTractionServer.Add(NewNodeID: TNodeID; NewAlias: Word): TLccTractionObject;
+begin
+  Result := TLccTractionObject.Create(Self);
+  List.Add(Result);
+  Result.NodeAlias := NewAlias;
+  Result.NodeID := NewNodeID;
+end;
+
+function TLccTractionServer.Remove(TestNodeID: TNodeID): TLccTractionObject;
+var
+  TractionObject: TLccTractionObject;
+begin
+  Result := nil;
+  TractionObject := Find(TestNodeID);
+  if Assigned(TractionObject) then
+  begin
+    List.Remove(TractionObject);
+    Result := TractionObject;
+  end;
+end;
+
+function TLccTractionServer.Find(TestNodeID: TNodeID): TLccTractionObject;
+var
+  i: Integer;
+  TractionObject: TLccTractionObject;
+begin
+  Result := nil;
+  for i := 0 to List.Count - 1 do
+  begin
+    TractionObject := List.Items[i] as TLccTractionObject;
+    if EqualNodeID(TestNodeID, TractionObject.NodeID, False) then
+    begin
+      Result := TractionObject;
+      Break
     end;
   end;
 end;
 
-function TLccTrainServer.UpdateControllerQuery(AMessage: TLccMessage): TLccTrainObject;
-begin
-  Result := FindTrainObjectByNodeID(AMessage.SourceID);
-  if Assigned(Result) then
-    AMessage.ExtractDataBytesAsNodeID(3, Result.Controller.FRequestingNodeID);
-end;
-
-procedure TLccTrainServer.Clear;
+procedure TLccTractionServer.Clear;
 var
   i: Integer;
 begin
   try
-    for i := 0 to TrainList.Count - 1 do
-      TrainList[i].Free;
+    for i := 0 to List.Count - 1 do
+      List[i].Free;
   finally
-    TrainList.Clear;
+    List.Clear;
   end;
 
+end;
+
+procedure TLccTractionServer.ProcessMessageLCC(ALccNode: TObject; SourceMessage: TLccMessage);
+begin
+  if Enabled then
+  begin
+    case SourceMessage.MTI of
+      MTI_TRACTION_SIMPLE_TRAIN_INFO_REPLY : HandleTractionSimpleTrainInfoReply(SourceMessage);
+      MTI_SIMPLE_NODE_INFO_REPLY           : HandleSimpleNodeInfoReply(SourceMessage);
+      MTI_PRODUCER_IDENTIFIED_CLEAR,
+      MTI_PRODUCER_IDENTIFIED_SET,
+      MTI_PRODUCER_IDENTIFIED_UNKNOWN      : HandleProducerIdentifiedAll(ALccNode, SourceMessage);
+      MTI_TRACTION_REQUEST :
+        begin
+          case SourceMessage.DataArray[0] of
+            TRACTION_SET_SPEED_DIR       : HandleTractionSetSpeed(SourceMessage);
+            TRACTION_SET_FUNCTION        : HandleTractionSetFunction(SourceMessage);
+            TRACTION_SET_E_STOP          : HandleTractionEStop(SourceMessage);
+            TRACTION_QUERY_SPEED         : HandleTractionQuerySpeed(SourceMessage);
+            TRACTION_QUERY_FUNCTION      : HandleTractionQueryFunction(SourceMessage);
+            TRACTION_CONTROLLER_CONFIG :
+              begin
+                case SourceMessage.DataArray[1] of
+                  TRACTION_CONTROLLER_CONFIG_ASSIGN  : HandleTractionControllerAssign(SourceMessage);
+                  TRACTION_CONTROLLER_CONFIG_RELEASE : HandleTractionControllerRelease(SourceMessage);
+                  TRACTION_CONTROLLER_CONFIG_QUERY   : HandleTractionControllerQuery(SourceMessage);
+                  TRACTION_CONTROLLER_CONFIG_CHANGING_NOTIFY : HandleTractionControllerChangingNotify(SourceMessage);
+                end
+              end;
+            TRACTION_LISTENER :
+              begin
+                case SourceMessage.DataArray[1] of
+                  TRACTION_LISTENER_ATTACH : HandleTractionListenerAttach(SourceMessage);
+                  TRACTION_LISTENER_DETACH : HandleTractionListenerDetach(SourceMessage);
+                  TRACTION_LISTENER_QUERY  : HandleTractionListenerQuery(SourceMessage);
+                end;
+              end;
+            TRACTION_MANAGE :
+              begin
+                case SourceMessage.DataArray[1] of
+                  TRACTION_MANAGE_RESERVE : HandleTractionManageReserve(SourceMessage);
+                  TRACTION_MANAGE_RELEASE : HandleTractionManageRelease(SourceMessage);
+                end
+              end;
+          end;
+        end;
+    end;
+  end;
 end;
 
 end.
