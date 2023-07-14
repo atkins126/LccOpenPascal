@@ -33,6 +33,8 @@ uses
   lcc_common_classes,
   lcc_node_messages_can_assembler_disassembler;
 
+const
+  THREAD_SLEEP_TIME = 2;
 
 type
 
@@ -70,16 +72,9 @@ type
   { TLccBaseEthernetThread }
 
   TLccBaseEthernetThread = class(TLccConnectionThread)
-  private
-    FGridConnectMessageAssembler: TLccGridConnectMessageAssembler;
-    FTryReceiveWorkerMessage: TLccMessage;
   protected
-    property GridConnectMessageAssembler: TLccGridConnectMessageAssembler read FGridConnectMessageAssembler write FGridConnectMessageAssembler;
-    property TryReceiveWorkerMessage: TLccMessage read FTryReceiveWorkerMessage write FTryReceiveWorkerMessage;
-
     procedure OnConnectionStateChange; virtual;
     procedure OnErrorMessageReceive; virtual;
-    procedure RequestErrorMessageSent; override;
 
     procedure AddToOutgoingBuffer(AMessage: TLccMessage);
 
@@ -181,32 +176,6 @@ begin
   (Owner as TLccEthernetHardwareConnectionManager).DoErrorMessage(Self, ConnectionInfo);
 end;
 
-procedure TLccBaseEthernetThread.RequestErrorMessageSent;
-//var
- // i: Integer;
- // List: TList;
-begin
-  inherited RequestErrorMessageSent;
-
- { // WE DONT KNOW IF THIS WAS ADDRESSED US SO WE CANT JUST BLINDLY SEND THE ERROR RESULT.....
-
-  List := Owner.NodeManager.Nodes.LockList;
-  try
-    i := 0;
-    while i < List.Count do
-    begin
-      if EqualNode(Owner.NodeManager.Node[i].NodeID, Owner.NodeManager.Node[i].AliasID, WorkerMessage.SourceID, WorkerMessage.CAN.SourceAlias, True) then
-      begin
-        Owner.NodeManager.SendMessage(Self, WorkerMessage);
-        Break;
-      end;
-      Inc(i);
-    end;
-  finally
-    Owner.NodeManager.Nodes.UnlockList;
-  end;   }
-end;
-
 procedure TLccBaseEthernetThread.AddToOutgoingBuffer(AMessage: TLccMessage);
 var
   LocalChunk: TLccDynamicByteArray;
@@ -224,14 +193,10 @@ end;
 constructor TLccBaseEthernetThread.Create(CreateSuspended: Boolean; AnOwner: TLccHardwareConnectionManager; AConnectionInfo: TLccHardwareConnectionInfo);
 begin
   inherited Create(CreateSuspended, AnOwner, AConnectionInfo);
-  GridConnectMessageAssembler := TLccGridConnectMessageAssembler.Create;
-  FTryReceiveWorkerMessage := TLccMessage.Create;
 end;
 
 destructor TLccBaseEthernetThread.Destroy;
 begin
-  FreeAndNil(FGridConnectMessageAssembler);
-  FreeAndNil(FTryReceiveWorkerMessage);
   inherited Destroy;
 end;
 

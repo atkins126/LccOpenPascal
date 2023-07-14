@@ -14,30 +14,59 @@ uses
   ComCtrls,
   StdCtrls,
   ExtCtrls,
+  LCLINTF,
+  Types,
   LCLType,
+  ActnList,
+  Buttons,
+  CheckLst,
   strutils,
   lcc_ethernet_client,
   lcc_node_manager,
   lcc_train_server,
   lcc_ethernet_common,
   lcc_node_messages,
+  lcc_node_train,
+  lcc_node_traindatabase,
   lcc_node_controller,
   lcc_common_classes,
   lcc_node,
-  lcc_defines;
+  lcc_defines,
+  lcc_base_classes,
+  lcc_utilities,
+  lcc_cdi_parser;
+
+
+const
+  IS_GRIDCONNECT = True;
+
+const
+  OBJID_VSCROLL =   $FFFFFFFB;
+  OBJID_HSCROLL =   $FFFFFFFA;
+
 
 const
   MAX_LED_SEGMENTS = 100;
   LED_TAPER = 0.010;
   MAX_DCC_ADDRESS = 10239;
 
+  ICON_MORE_DOTS_IMAGE_INDEX = 4;
+
 type
 
   TLEDShapeArray = array[0..MAX_LED_SEGMENTS-1] of TShape;
 
+
   { TFormTrainController }
 
   TFormTrainController = class(TForm)
+    ActionRosterForward: TAction;
+    ActionRosterBack: TAction;
+    ActionLogDetailed: TAction;
+    ActionLogClear: TAction;
+    ActionLogEnable: TAction;
+    ActionListMain: TActionList;
+    ButtonLogClear: TButton;
     ButtonThrottleSelectGo: TButton;
     ButtonThrottleStop: TButton;
     ButtonSettingsRestartConnection: TButton;
@@ -46,6 +75,10 @@ type
     EditSettingsIP: TEdit;
     EditSettingsPort: TEdit;
     EditSettingsNodeID: TEdit;
+    ImageThrottleHamburger: TImage;
+    ImageListMain: TImageList;
+    ImageScrollLeft: TImage;
+    ImageScrollRight: TImage;
     Label1: TLabel;
     Label2: TLabel;
     LabelSettingsAliasID: TLabel;
@@ -53,7 +86,19 @@ type
     LabelSettings2: TLabel;
     LabelSettings3: TLabel;
     LabelSettingsConnectionState: TLabel;
+    ListBoxRosterDetails: TListBox;
+    ListBoxRoster: TListBox;
+    MemoLog: TMemo;
+    PageControlRoster: TPageControl;
     PageControlMain: TPageControl;
+    PanelRosterEditorConfigurationBkGnd: TPanel;
+    PanelThrottleHamburger: TPanel;
+    Panel2: TPanel;
+    PanelRosterHeader: TPanel;
+    PanelThrottle: TPanel;
+    PanelRosterSlider: TPanel;
+    PanelMainRosterBackground: TPanel;
+    PanelLogHeader: TPanel;
     PanelThrottleContainer: TPanel;
     PanelThrottleSlider: TPanel;
     PanelThrottleFooter: TPanel;
@@ -66,10 +111,16 @@ type
     PanelSettings6: TPanel;
     PanelSettings1: TPanel;
     ScrollBoxFunctions: TScrollBox;
-    Throttle: TTabSheet;
-    Roster: TTabSheet;
-    Settings: TTabSheet;
+    TabSheetRosterList: TTabSheet;
+    TabSheetRosterDetails: TTabSheet;
+    TabSheetRosterEditor: TTabSheet;
+    TabSheetLog: TTabSheet;
+    TabSheetThrottle: TTabSheet;
+    TabSheetRoster: TTabSheet;
+    TabSheetSettings: TTabSheet;
     TimerMain: TTimer;
+    ToggleBoxLogDetailed: TToggleBox;
+    ToggleBoxLogEnable: TToggleBox;
     ToggleBoxThrottleSelectShort: TToggleBox;
     ToggleBoxThrottleForward: TToggleBox;
     ToggleBoxThrottleReverse: TToggleBox;
@@ -94,6 +145,8 @@ type
     ToggleBoxF8: TToggleBox;
     ToggleBoxF9: TToggleBox;
     TrackBarThrottle: TTrackBar;
+    procedure ActionLogClearExecute(Sender: TObject);
+    procedure ActionRosterRefreshExecute(Sender: TObject);
     procedure ButtonSettingsRestartConnectionClick(Sender: TObject);
     procedure ButtonThrottleSelectGoClick(Sender: TObject);
     procedure ButtonThrottleStopClick(Sender: TObject);
@@ -102,24 +155,44 @@ type
     procedure FormCreate(Sender: TObject);
     procedure FormDestroy(Sender: TObject);
     procedure FormShow(Sender: TObject);
+    procedure ImageScrollLeftClick(Sender: TObject);
+    procedure ImageScrollRightClick(Sender: TObject);
+    procedure ListBoxRosterDetailsDrawItem(Control: TWinControl;Index: Integer; ARect: TRect; State: TOwnerDrawState);
+    procedure ListBoxRosterDetailsMouseUp(Sender: TObject; Button: TMouseButton; Shift: TShiftState; X, Y: Integer);
+    procedure ListBoxRosterDrawItem(Control: TWinControl; Index: Integer;ARect: TRect; State: TOwnerDrawState);
+    procedure ListBoxRosterMouseUp(Sender: TObject; Button: TMouseButton; Shift: TShiftState; X, Y: Integer);
     procedure OnFunctionClick(Sender: TObject);
+    procedure PageControlRosterChange(Sender: TObject);
+    procedure PageControlRosterChanging(Sender: TObject;var AllowChange: Boolean);
     procedure PanelThrottleLeverResize(Sender: TObject);
+    procedure SpeedButton1Click(Sender: TObject);
     procedure TimerMainTimer(Sender: TObject);
     procedure ToggleBoxFunctionChange(Sender: TObject);
     procedure ToggleBoxThrottleForwardChange(Sender: TObject);
     procedure ToggleBoxThrottleReverseChange(Sender: TObject);
     procedure TrackBarThrottleChange(Sender: TObject);
   private
+    FBitmapDetails: TBitmap;
+    FCDIParser: TLccCdiParser;
+    FConsistPanelShown: Boolean;
     FController: TLccTrainController;
+    FDetailsTractionObject: TLccTractionObject;
     FEthernetClient: TLccEthernetClient;
     FNodeManager: TLccNodeManager;
     FShownOnce: Boolean;
     FLEDArray: TLEDShapeArray;
 
   protected
+    property CDIParser: TLccCdiParser read FCDIParser write FCDIParser;
+    property ConsistPanelShown: Boolean read FConsistPanelShown;
+    property DetailsTractionObject: TLccTractionObject read FDetailsTractionObject write FDetailsTractionObject;
+
     property ShownOnce: Boolean read FShownOnce write FShownOnce;
     procedure OnConnectionStateChange(Sender: TObject; ConnectionInfo: TLccHardwareConnectionInfo);
     procedure OnErrorMessage(Sender: TObject; ConnectionInfo: TLccHardwareConnectionInfo);
+
+    procedure OnMessageReceive(Sender: TObject; LccMessage: TLccMessage);
+    procedure OnMessageSend(Sender: TObject; LccMessage: TLccMessage);
 
     procedure OnSNIPChange(TractionObject: TLccTractionObject);
     procedure OnTrainSNIPChange(TractionObject: TLccTractionObject);
@@ -130,19 +203,28 @@ type
 
     procedure OnNodeIDChanged(Sender: TObject; ALccNode: TLccNode);
     procedure OnNodeAliasChanged(Sender: TObject; ALccNode: TLccNode);
+    procedure OnNodeLogin(Sender: TObject; ALccNode: TLccNode);
 
     procedure OnControllerAssignChange(Sender: TObject; ATractionServer: TLccTractionServer; ATractionObject: TLccTractionObject; IsAssigned: Boolean);
+
+    procedure AllocateTrainCallback(EngineAllocateTrain: TLccEngineSearchAndAllocateTrain; AEngineSearchTrain: TLccEngineSearchTrain);
+
+    procedure OnCDIReadCallback(MemorySpaceReadEnging: TLccEngineMemorySpaceAccess);
 
     procedure EnableControls(DoEnable: Boolean);
 
     procedure OnLEDClick(Sender: TObject);
     procedure UpdateRoster;
     function ValidateExtendedDccAddress(AddressStr: String; var DccAddress: Integer; var IsLong: Boolean): Boolean;
+    procedure UpdateRosterHeaderScrolledLeft;
+    procedure UpdateRosterHeaderScrolledRight;
+    procedure LoadCDIUserInterface;
 
   public
     property Controller: TLccTrainController read FController write FController;
     property EthernetClient: TLccEthernetClient read FEthernetClient write FEthernetClient;
     property NodeManager: TLccNodeManager read FNodeManager write FNodeManager;
+    property BitmapDetails: TBitmap read FBitmapDetails write FBitmapDetails;
   end;
 
 var
@@ -157,14 +239,22 @@ implementation
 
 procedure TFormTrainController.FormCreate(Sender: TObject);
 begin
-  NodeManager := TLccNodeManager.Create(nil, True);
-  EthernetClient := TLccEthernetClient.Create(Self, NodeManager);
+  NodeManager := TLccNodeManager.Create(nil, IS_GRIDCONNECT);
+  EthernetClient := TLccEthernetClient.Create(nil, NodeManager);
+  BitmapDetails := TBitmap.Create;
+  CDIParser := TLccCdiParser.Create(nil);
+  ImageListMain.GetBitmap(ICON_MORE_DOTS_IMAGE_INDEX, BitmapDetails);
 
   EthernetClient.OnConnectionStateChange := @OnConnectionStateChange;
   EthernetClient.OnErrorMessage := @OnErrorMessage;
+  EthernetClient.OnLccMessageReceive := @OnMessageReceive;
+  EthernetClient.OnLccMessageSend := @OnMessageSend;
 
   NodeManager.OnNodeAliasIDChanged := @OnNodeAliasChanged;
   NodeManager.OnNodeIDChanged := @OnNodeIdChanged;
+  NodeManager.OnNodeLogin := @OnNodeLogin;
+
+  PanelRosterSlider.Width := 0;
 end;
 
 procedure TFormTrainController.FormCloseQuery(Sender: TObject; var CanClose: Boolean);
@@ -182,10 +272,26 @@ begin
   begin
     Info.ListenerIP := EditSettingsIP.Text;
     Info.ListenerPort := StrToInt(EditSettingsPort.Text);
-    Info.GridConnect := True;
+    Info.GridConnect := IS_GRIDCONNECT;
     Info.Hub := False;
     Info.SuppressErrorMessages := False;
     EthernetClient.OpenConnection(Info);
+  end;
+end;
+
+procedure TFormTrainController.ActionRosterRefreshExecute(Sender: TObject);
+begin
+  if Assigned(Controller) then
+    Controller.FindAllTrains;
+end;
+
+procedure TFormTrainController.ActionLogClearExecute(Sender: TObject);
+begin
+  MemoLog.Lines.BeginUpdate;
+  try
+    MemoLog.Lines.Clear;
+  finally
+    MemoLog.Lines.EndUpdate;
   end;
 end;
 
@@ -202,7 +308,14 @@ begin
   if ValidateExtendedDccAddress(AddressStr, AddressInt, IsLong) then
   begin
     AddressWord := AddressInt;
-    Controller.AssignTrainByDccAddress(AddressWord, IsLong, TLccDccSpeedStep( ComboBoxThrottleSpeedSteps.ItemIndex));
+    if Assigned(Controller) then
+    begin
+      Controller.EngineSearchAndAllocateTrain.Reset;
+      Controller.EngineSearchAndAllocateTrain.Assign(AddressWord, IsLong, TLccDccSpeedStep( ComboBoxThrottleSpeedSteps.ItemIndex), @AllocateTrainCallback);
+      Controller.EngineSearchAndAllocateTrain.Start;
+
+   //   Controller.AssignTrainByDccAddress(AddressWord, IsLong, TLccDccSpeedStep( ComboBoxThrottleSpeedSteps.ItemIndex));
+    end;
   end;
 end;
 
@@ -233,6 +346,8 @@ begin
   NodeManager.ReleaseAliasAll;
   EthernetClient.Free;
   NodeManager.Free;    // Must be last as previous 2 use it
+  BitmapDetails.Free;
+  CDIParser.Free;
 end;
 
 procedure TFormTrainController.FormShow(Sender: TObject);
@@ -257,7 +372,173 @@ begin
       ToggleBoxThrottleForward.Checked := True;
     end;
     PanelThrottleLeverResize(Self);
+    PageControlRoster.ShowTabs := False;
     ButtonSettingsRestartConnectionClick(Self);
+    UpdateRosterHeaderScrolledLeft;
+    PageControlRoster.PageIndex := 0;
+  end;
+end;
+
+procedure TFormTrainController.ImageScrollLeftClick(Sender: TObject);
+begin
+  UpdateRosterHeaderScrolledLeft;
+end;
+
+procedure TFormTrainController.ImageScrollRightClick(Sender: TObject);
+begin
+  UpdateRosterHeaderScrolledRight;
+end;
+
+procedure TFormTrainController.ListBoxRosterDetailsDrawItem(Control: TWinControl; Index: Integer; ARect: TRect; State: TOwnerDrawState);
+var
+  aColor: TColor;                       //Background color
+  TextRect, ImageRect: TRect;
+  DetailsText: String;
+begin
+  if (Index mod 2 = 0)                  //Index tells which item it is
+    then aColor:=$FFFFFF                //every second item gets white as the background color
+    else aColor:=$EEEEFF;               //every second item gets pink background color
+  if odSelected in State then aColor:=$0000FF;  //If item is selected, then red as background color
+  ListBoxRosterDetails.Canvas.Brush.Color:=aColor;  //Set background color
+  ListBoxRosterDetails.Canvas.FillRect(ARect);      //Draw a filled rectangle
+
+
+  TextRect := ARect;
+  ListBoxRosterDetails.Canvas.Font.Bold := True;      //Set the font to "bold"
+  ListBoxRosterDetails.Canvas.TextRect(TextRect, 2, TextRect.Top+2, ListBoxRosterDetails.Items[Index]);  //Draw Itemtext
+
+  DetailsText := 'Unknown...';
+  if Assigned(DetailsTractionObject) then
+  begin
+    if DetailsTractionObject.SNIP.Valid then
+    begin
+      case Index of
+        0 : DetailsText := DetailsTractionObject.SNIP.Manufacturer;
+        1 : DetailsText := DetailsTractionObject.SNIP.Model;
+        2 : DetailsText := DetailsTractionObject.SNIP.HardwareVersion;
+        3 : DetailsText := DetailsTractionObject.SNIP.SoftwareVersion;
+        4 : DetailsText := DetailsTractionObject.SNIP.UserName;
+        5 : DetailsText := DetailsTractionObject.SNIP.UserDescription;
+      end;
+    end
+  end;
+  ListBoxRosterDetails.Canvas.Font.Bold := False;
+  ListBoxRosterDetails.Canvas.TextOut(TextRect.Left + 20, TextRect.Top + (TextRect.Height div 2), DetailsText);
+
+  if (Index > 3) then
+  begin
+    ImageRect := ARect;
+    ImageRect.Left := ImageRect.Right - ImageRect.Height;
+    InflateRect(ImageRect, -2, -2);
+    OffsetRect(ImageRect, -4, 0);
+    ListBoxRosterDetails.Canvas.StretchDraw(ImageRect, BitmapDetails);
+  end;
+end;
+
+procedure TFormTrainController.ListBoxRosterDetailsMouseUp(Sender: TObject; Button: TMouseButton; Shift: TShiftState; X, Y: Integer);
+var
+  Point: TPoint;
+  HitItemIndex: Integer;
+  DetailsRect: TRect;
+  YScroll: TScrollInfo;
+begin
+  if PageControlRoster.PageIndex = 1 then
+  begin
+    Point.X := X;
+    Point.Y := Y;
+    HitItemIndex := ListBoxRosterDetails.ItemAtPos(Point, True);
+    if HitItemIndex > -1 then
+    begin
+      DetailsRect := ListBoxRosterDetails.ItemRect(HitItemIndex);
+      DetailsRect.Left := DetailsRect.Right - DetailsRect.Height;
+
+      // No idea how or why this works....
+    //    LclIntF.GetScrollInfo(ListBoxRoster.Handle, Integer(OBJID_VSCROLL), YScroll);
+    //    LclIntF.GetScrollInfo(ListBoxRoster.Handle, 0, YScroll);
+      LclIntF.GetScrollInfo(ListBoxRosterDetails.Handle, 1, YScroll);
+
+      DetailsRect := ListBoxRosterDetails.ItemRect(HitItemIndex);
+      DetailsRect.Left := DetailsRect.Right - DetailsRect.Height;
+      OffsetRect(DetailsRect, 0, -YScroll.nPos);
+
+      if PtInRect(DetailsRect, Point) then
+      begin
+        UpdateRosterHeaderScrolledRight;
+        if Assigned(DetailsTractionObject) then
+        begin
+          if not DetailsTractionObject.NodeCDI.Valid then
+          begin
+            PanelRosterEditorConfigurationBkGnd.Caption := 'Reading Configuration Data......';
+            Controller.EngineMemorySpaceAccess.Reset;
+            Controller.EngineMemorySpaceAccess.Assign(lems_Read, MSI_CDI, True, 0, 0, False, DetailsTractionObject.NodeID, DetailsTractionObject.NodeAlias, @OnCDIReadCallback);
+            Controller.EngineMemorySpaceAccess.Start;
+          end else
+            LoadCDIUserInterface;
+        end;
+      end;
+    end;
+  end;
+
+end;
+
+procedure TFormTrainController.ListBoxRosterDrawItem(Control: TWinControl;
+  Index: Integer; ARect: TRect; State: TOwnerDrawState);
+var
+  aColor: TColor;                       //Background color
+  DetailsRect: TRect;
+begin
+  if (Index mod 2 = 0)                  //Index tells which item it is
+    then aColor:=$FFFFFF                //every second item gets white as the background color
+    else aColor:=$EEEEFF;               //every second item gets pink background color
+  if odSelected in State then aColor:=$0000FF;  //If item is selected, then red as background color
+  ListBoxRoster.Canvas.Brush.Color:=aColor;  //Set background color
+  ListBoxRoster.Canvas.FillRect(ARect);      //Draw a filled rectangle
+
+  ListBoxRoster.Canvas.Font.Bold:=True;      //Set the font to "bold"
+  ListBoxRoster.Canvas.TextRect(ARect, 2, ARect.Top+2, ListBoxRoster.Items[Index]);  //Draw Itemtext
+
+  DetailsRect := ARect;
+  DetailsRect.Left := DetailsRect.Right - DetailsRect.Height;
+  InflateRect(DetailsRect, -2, -2);
+  OffsetRect(DetailsRect, -4, 0);
+  ListBoxRoster.Canvas.StretchDraw(DetailsRect, BitmapDetails);
+
+end;
+
+type
+  THackListBox = class(TListBox);
+
+procedure TFormTrainController.ListBoxRosterMouseUp(Sender: TObject; Button: TMouseButton; Shift: TShiftState; X, Y: Integer);
+var
+  Point: TPoint;
+  HitItemIndex: Integer;
+  DetailsRect: TRect;
+  YScroll: TScrollInfo;
+begin
+  if PageControlRoster.PageIndex = 0 then
+  begin
+    Point.X := X;
+    Point.Y := Y;
+    HitItemIndex := ListBoxRoster.ItemAtPos(Point, True);
+    if HitItemIndex > -1 then
+    begin
+      FillChar(YScroll, SizeOf(YScroll), #0);
+
+    // No idea how or why this works....
+  //    LclIntF.GetScrollInfo(ListBoxRoster.Handle, Integer(OBJID_VSCROLL), YScroll);
+  //    LclIntF.GetScrollInfo(ListBoxRoster.Handle, 0, YScroll);
+      LclIntF.GetScrollInfo(ListBoxRoster.Handle, 1, YScroll);
+
+      DetailsRect := ListBoxRoster.ItemRect(HitItemIndex);
+      DetailsRect.Left := DetailsRect.Right - DetailsRect.Height;
+      OffsetRect(DetailsRect, 0, -YScroll.nPos);
+
+      if PtInRect(DetailsRect, Point) then
+      begin
+        DetailsTractionObject := ListBoxRoster.Items.Objects[HitItemIndex] as TLccTractionObject;
+        UpdateRosterHeaderScrolledRight;
+      end;
+    end;
   end;
 end;
 
@@ -270,6 +551,17 @@ begin
    //   Controller.assigned
     end;
   end;
+end;
+
+procedure TFormTrainController.PageControlRosterChange(Sender: TObject);
+begin
+  // Broken does not fire
+end;
+
+procedure TFormTrainController.PageControlRosterChanging(Sender: TObject;
+  var AllowChange: Boolean);
+begin
+  // Useless as it does not say what the next one is...
 end;
 
 procedure TFormTrainController.PanelThrottleLeverResize(Sender: TObject);
@@ -294,6 +586,35 @@ begin
   end;
 end;
 
+procedure TFormTrainController.SpeedButton1Click(Sender: TObject);
+var
+  i: Integer;
+begin
+  if ConsistPanelShown then
+  begin
+    PanelRosterSlider.Width  := 0;
+  {  for i := PanelRosterSlider.Width downto 0 do
+    begin
+      PanelRosterSlider.Width := i;
+   //   Sleep(0);
+      Invalidate;
+      Update;
+    end;   }
+    FConsistPanelShown := False;
+  end else
+  begin
+    PanelRosterSlider.Width  := 200;
+  {  for i := 0 to 150 do
+    begin
+      PanelRosterSlider.Width := i;
+  //    Sleep(0);
+      Invalidate;
+      Update;
+    end;      }
+    FConsistPanelShown := True;
+  end;
+end;
+
 procedure TFormTrainController.TimerMainTimer(Sender: TObject);
 begin
 //  WriteLn('Timer Tick');
@@ -306,7 +627,8 @@ end;
 
 procedure TFormTrainController.ToggleBoxFunctionChange(Sender: TObject);
 begin
-  Controller.AssignedTrain.SetFunction( (Sender as TToggleBox).Tag, Word( (Sender as TToggleBox).Checked));
+  if Assigned(Controller) then
+    Controller.AssignedTrain.SetFunction( (Sender as TToggleBox).Tag, Word( (Sender as TToggleBox).Checked));
 end;
 
 procedure TFormTrainController.ToggleBoxThrottleForwardChange(Sender: TObject);
@@ -321,10 +643,13 @@ end;
 
 procedure TFormTrainController.TrackBarThrottleChange(Sender: TObject);
 begin
-  if ToggleBoxThrottleForward.Checked then
-    Controller.AssignedTrain.SetSpeed(TrackBarThrottle.Position)
-  else
-    Controller.AssignedTrain.SetSpeed(-TrackBarThrottle.Position)
+  if Assigned(Controller) then
+  begin
+    if ToggleBoxThrottleForward.Checked then
+      Controller.AssignedTrain.SetSpeed(TrackBarThrottle.Position)
+    else
+      Controller.AssignedTrain.SetSpeed(-TrackBarThrottle.Position)
+  end
 end;
 
 procedure TFormTrainController.OnConnectionStateChange(Sender: TObject; ConnectionInfo: TLccHardwareConnectionInfo);
@@ -351,6 +676,7 @@ begin
           Controller.TractionServer.OnFunctionChange := @OnFunctionChange;
           Controller.TractionServer.OnSpeedChange := @OnSpeedChange;
           Controller.OnControllerAssignChange := @OnControllerAssignChange;
+          Controller.TractionServer.Enabled := True;
         end;
       end;
     lcsDisconnecting :
@@ -365,9 +691,73 @@ begin
 
 end;
 
-procedure TFormTrainController.OnSNIPChange(TractionObject: TLccTractionObject);
+procedure TFormTrainController.OnMessageReceive(Sender: TObject; LccMessage: TLccMessage);
+var
+  ByteArray: TLccDynamicByteArray;
 begin
-  UpdateRoster
+  if ToggleBoxLogEnable.Checked then
+  begin
+    MemoLog.Lines.BeginUpdate;
+    try
+      if IS_GRIDCONNECT then
+      begin
+        if ToggleBoxLogDetailed.Checked then
+          MemoLog.Lines.Add('R: ' + MessageToDetailedMessage(LccMessage))
+        else
+          MemoLog.Lines.Add('R: ' + LccMessage.ConvertToGridConnectStr('', False));
+      end else
+      begin
+        LccMessage.ConvertToLccTcp(ByteArray);
+        MemoLog.Lines.Add('R: ' + LccMessage.ConvertToLccTcpString(ByteArray));
+      end;
+
+      MemoLog.SelStart := Length(MemoLog.Lines.Text);
+    finally
+      MemoLog.Lines.EndUpdate;
+    end;
+  end;
+end;
+
+procedure TFormTrainController.OnMessageSend(Sender: TObject; LccMessage: TLccMessage);
+var
+  ByteArray: TLccDynamicByteArray;
+begin
+  if ToggleBoxLogEnable.Checked then
+  begin
+    MemoLog.Lines.BeginUpdate;
+    try
+      if IS_GRIDCONNECT then
+      begin
+        if ToggleBoxLogDetailed.Checked then
+          MemoLog.Lines.Add('S: ' + MessageToDetailedMessage(LccMessage))
+        else
+          MemoLog.Lines.Add('S: ' + LccMessage.ConvertToGridConnectStr('', False));
+      end else
+      begin
+        LccMessage.ConvertToLccTcp(ByteArray);
+        MemoLog.Lines.Add('S: ' + LccMessage.ConvertToLccTcpString(ByteArray));
+      end;
+      MemoLog.SelStart := Length(MemoLog.Lines.Text);
+    finally
+      MemoLog.Lines.EndUpdate;
+    end;
+  end;
+end;
+
+procedure TFormTrainController.OnSNIPChange(TractionObject: TLccTractionObject);
+var
+  ItemIndex: Integer;
+begin
+  if DetailsTractionObject = TractionObject then
+  begin
+    // Redraw it
+    ListBoxRosterDetails.Invalidate;
+    ListBoxRosterDetails.Update;
+  end;
+
+  ItemIndex := ListBoxRoster.Items.IndexOfObject(TractionObject);
+  if ItemIndex > -1 then
+    ListBoxRoster.Items[ItemIndex] := TractionObject.DisplayName;
 end;
 
 procedure TFormTrainController.OnTrainSNIPChange(TractionObject: TLccTractionObject);
@@ -391,13 +781,41 @@ begin
 end;
 
 procedure TFormTrainController.OnRegisterChange(TractionObject: TLccTractionObject; IsRegistered: Boolean);
+var
+  ItemIndex: Integer;
 begin
-
+  ListBoxRoster.Items.BeginUpdate;
+  try
+    if IsRegistered then
+    begin
+      ItemIndex := ListBoxRoster.Items.IndexOfObject(TractionObject);
+      if ItemIndex < 0 then
+         ItemIndex := ListBoxRoster.Items.AddObject(TractionObject.DisplayName, TractionObject);
+      Controller.SendSNIPRequest(TractionObject.NodeID, TractionObject.NodeAlias);
+      Controller.SendTrainSNIPRequest(TractionObject.NodeID, TractionObject.NodeAlias);
+    end else
+    begin
+      ItemIndex := ListBoxRoster.Items.IndexOfObject(TractionObject);
+      if ItemIndex > -1 then
+      begin
+        if ListBoxRoster.Selected[ItemIndex] then
+        begin
+          ListBoxRoster.Selected[ItemIndex] := False;
+          PageControlRoster.PageIndex := 0;   // Item is going away jump back
+          if TractionObject =  DetailsTractionObject then
+            DetailsTractionObject := nil; // don't reference the traction object anymore
+        end;
+        ListBoxRoster.Items.Delete(ItemIndex);
+      end;
+    end
+  finally
+    ListBoxRoster.Items.EndUpdate;
+  end;
 end;
 
 procedure TFormTrainController.OnNodeIDChanged(Sender: TObject; ALccNode: TLccNode);
 begin
-  EditSettingsNodeID.Text := ALccNode.NodeIDStr;
+  EditSettingsNodeID.Text := ALccNode.NodeIDStr[True];
 end;
 
 procedure TFormTrainController.OnNodeAliasChanged(Sender: TObject; ALccNode: TLccNode);
@@ -405,15 +823,37 @@ begin
  LabelSettingsAliasID.Caption := ALccNode.AliasIDStr;
 end;
 
+procedure TFormTrainController.OnNodeLogin(Sender: TObject; ALccNode: TLccNode);
+begin
+  if ALccNode = Controller then
+    Controller.FindAllTrains;
+end;
+
 procedure TFormTrainController.OnControllerAssignChange(Sender: TObject; ATractionServer: TLccTractionServer; ATractionObject: TLccTractionObject; IsAssigned: Boolean);
 begin
   EnableControls(IsAssigned);
-  if IsAssigned then
+  if Assigned(Controller) then
   begin
-    Controller.ListenerDetachFromAssignedTrain;
-    Controller.ListenerAttach(ATractionObject);
-  end else
-    Controller.ListenerDetachFromAssignedTrain;
+    if IsAssigned then
+    begin
+      Controller.ListenerDetachFromAssignedTrain;
+      Controller.ListenerAttach(ATractionObject);
+    end else
+      Controller.ListenerDetachFromAssignedTrain;
+  end;
+end;
+
+procedure TFormTrainController.AllocateTrainCallback(
+  EngineAllocateTrain: TLccEngineSearchAndAllocateTrain;
+  AEngineSearchTrain: TLccEngineSearchTrain);
+begin
+  Controller.TractionServer.Find(AEngineSearchTrain.SearchTrain.NodeIdentification.NodeID);
+end;
+
+procedure TFormTrainController.OnCDIReadCallback(MemorySpaceReadEnging: TLccEngineMemorySpaceAccess);
+begin
+  LoadCDIUserInterface;
+
 end;
 
 procedure TFormTrainController.EnableControls(DoEnable: Boolean);
@@ -494,6 +934,63 @@ begin
     end
   end;
 end;
+
+procedure TFormTrainController.UpdateRosterHeaderScrolledLeft;
+begin
+  if PageControlRoster.PageIndex > 0 then
+  begin
+    PageControlRoster.PageIndex := PageControlRoster.PageIndex - 1 ;
+    if PageControlRoster.PageIndex = 0 then
+    begin
+      DetailsTractionObject := nil;
+      ListBoxRosterDetails.ClearSelection;
+    end;
+  end;
+  ImageScrollLeft.Visible := PageControlRoster.PageIndex > 0;
+  ImageScrollRight.Visible := True;
+  PanelRosterHeader.Caption := PageControlRoster.Pages[PageControlRoster.PageIndex].Caption;
+end;
+
+procedure TFormTrainController.UpdateRosterHeaderScrolledRight;
+begin
+  if PageControlRoster.PageIndex < PageControlRoster.PageCount - 1 then
+    PageControlRoster.PageIndex := PageControlRoster.PageIndex + 1;
+
+  if PageControlRoster.PageIndex = 1 then
+  begin
+    if Assigned(DetailsTractionObject) then
+    begin
+      if not DetailsTractionObject.SNIP.Valid then
+        Controller.SendSNIPRequest(DetailsTractionObject.NodeID, DetailsTractionObject.NodeAlias);
+      if not DetailsTractionObject.TrainSNIP.Valid then
+        Controller.SendTrainSNIPRequest(DetailsTractionObject.NodeID, DetailsTractionObject.NodeAlias);
+    end;
+  end;
+
+  ImageScrollLeft.Visible :=  True;
+  ImageScrollRight.Visible := PageControlRoster.PageIndex < (PageControlRoster.PageCount - 1);
+  PanelRosterHeader.Caption := PageControlRoster.Pages[PageControlRoster.PageIndex].Caption;
+end;
+
+procedure TFormTrainController.LoadCDIUserInterface;
+var
+  ATargetNode: TLccNodeIdentificationObject;
+begin
+  if Assigned(DetailsTractionObject) then
+  begin
+    ATargetNode := TLccNodeIdentificationObject.Create;
+    try
+      ATargetNode.AssignID(DetailsTractionObject.NodeID, DetailsTractionObject.NodeAlias);
+      PanelRosterEditorConfigurationBkGnd.Caption := 'Building User Interface......';
+      CDIParser.Build_CDI_Interface(Controller, ATargetNode, PanelRosterEditorConfigurationBkGnd, DetailsTractionObject.NodeCDI.CDI);
+      PanelRosterEditorConfigurationBkGnd.Caption := '';
+
+    finally
+      ATargetNode.Free;
+    end;
+  end;
+end;
+
 
 end.
 

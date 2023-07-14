@@ -14,6 +14,7 @@ uses
   lcc_math_float16,
   lcc_defines,
   lcc_utilities,
+  lcc_base_classes,
   lcc_alias_server;
 
 type
@@ -69,70 +70,18 @@ type
     property Valid: Boolean read FValid write FValid;
   end;
 
-  // Base struture that contains the two types of LCC node identifiers, the long
-  // globally unique ID or NodeID and the local Alias (if running CAN/Gridconnect)
+   { TLccNodeCDI }
 
-  { TLccNodeIdentificationObject }
-
-  TLccNodeIdentificationObject = class
+  TLccNodeCDI = class
   private
-    FActive: Boolean;
-    FAlias: Word;
-    FNodeID: TNodeID;
-    FAbandonCount: Integer;
+    FImplemented: Boolean;   // Flags if we tried and could not get a CDI
+    FCDI: String;
+    function GetValid: Boolean;
+    procedure SetCDI(const Value: string);
   public
-    property NodeID: TNodeID read FNodeID write FNodeID;
-    property Alias: Word read FAlias write FAlias;
-    property Active: Boolean read FActive write FActive;
-    property AbandonCount: Integer read FAbandonCount write FAbandonCount;
-
-    procedure AssignID(ANodeID: TNodeID; AnAlias: Word);
-    function Clone: TLccNodeIdentificationObject;
-    function Compare(TestObject: TLccNodeIdentificationObject): Boolean; overload;
-    function Compare(TestMapping: TLccAliasMapping): Boolean overload;
-    function CompareEitherOr(TestObject: TLccNodeIdentificationObject): Boolean; overload;
-    function CompareEitherOr(TestMapping: TLccAliasMapping): Boolean; overload;
-    function Valid: Boolean;  // Valid means one or the other is non zero, not that is is mapped
-  end;
-
-
-
-  // List that manages multiple Node Identification IDs
-
-    { TLccNodeIdentificationObjectList }
-
-  TLccNodeIdentificationObjectList = class(TList)
-  private
-    function GetDestination: TLccNodeIdentificationObject;
-    function GetIdentification(Index: Integer): TLccNodeIdentificationObject;
-    function GetSource: TLccNodeIdentificationObject;
-    procedure SetIdentification(Index: Integer; AValue: TLccNodeIdentificationObject);
-  public
-    property NodeIdentification[Index: Integer]: TLccNodeIdentificationObject read GetIdentification write SetIdentification; default;
-    property Source: TLccNodeIdentificationObject read GetSource;
-    property Destination: TLccNodeIdentificationObject read GetDestination;
-
-    constructor Create(AutoCreateSourceDestination: Boolean = True);
-    destructor Destroy; override;
-    procedure Clear; override;
-
-    // Returns true if all the Identifications have been filled in or are not active anyway
-    function IdentificationsValid: Boolean;
-    // Tests if the passed Identification is already in the list
-    function IsDuplicate(DestinationObject: TLccNodeIdentificationObject): Boolean; overload;
-    function IsDuplicate(ANodeID: TNodeID; AnAlias: Word): Boolean; overload;
-    // Updates the list with the new mapping that is passed
-    function ProcessNewMapping(NewMapping: TLccAliasMapping): Boolean;
-    // Removes any Identification objects that match the mapping
-    procedure RemoveIdentification(AliasMapping: TLccAliasMapping);
-    // Clears the list other than the first 2 (source/destination) which it just zeros and sets to defaults
-    procedure ClearIdentifications(AutoCreateSourceDestination: Boolean = True);
-    // Returns True if the mapping that is going away is associated with any alias in this list
-    function LogOut(AnAlias: Word): Boolean;
-    // Adds and sets the properities of a TLccNodeIdentificationObject
-    function AddNodeIdentificationObject(ANodeID: TNodeID; AnAlias: Word): TLccNodeIdentificationObject;
-    //
-    function RetryCountMaxedOut(ATestCount: Integer): Boolean;
+    property CDI: String read FCDI write SetCDI;
+    property Implemented: Boolean read FImplemented write FImplemented;
+    property Valid: Boolean read GetValid;
   end;
 
 
@@ -153,6 +102,8 @@ type
     property SourceAlias: Word read FSourceAlias write FSourceAlias;
   end;
 
+  TNodeIdentificationCallback = procedure(ANodeIdentification: TLccNodeIdentificationObject) of object;
+
 
 { TLccMessage }
 
@@ -168,6 +119,7 @@ private
   FSourceID: TNodeID;                       // NodeID of the Source of a message
   FMTI: Word;                               // The Actual MTI of the message IF it is not a CAN frame message
   FRetryAttemptsDatagram: Integer;                  // If a message returned "Temporary" (like no buffers) this holds how many time it has been retried and defines a give up time to stop resending
+  FWorkerNodeIdentifcationObject: TLccNodeIdentificationObject;
   function GetHasDestination: Boolean;
   function GetHasDestNodeID: Boolean;
   function GetHasSourceNodeID: Boolean;
@@ -191,6 +143,7 @@ public
   property RetryAttemptsDatagram: Integer read FRetryAttemptsDatagram write FRetryAttemptsDatagram;
   property SourceID: TNodeID read FSourceID write FSourceID;
   property NodeIdentifications: TLccNodeIdentificationObjectList read FNodeIdentifications write FNodeIdentifications;
+  property WorkerNodeIdentifcationObject: TLccNodeIdentificationObject read FWorkerNodeIdentifcationObject write FWorkerNodeIdentifcationObject;
 
   constructor Create;
   destructor Destroy; override;
@@ -201,15 +154,17 @@ public
   procedure InsertNodeID(StartIndex: Integer; var ANodeID: TNodeID);
   procedure InsertEventID(StartIndex: Integer; var AnEventID: TEventID);
   procedure InsertDWordAsDataBytes(DoubleWord: DWord; StartByteIndex: Integer);
-  procedure InsertWordAsDataBytes(AWord: DWord; StartByteIndex: Integer);
+  procedure InsertWordAsDataBytes(AWord: Word; StartByteIndex: Integer);
   function ExtractDataBytesAsEventID(StartIndex: Integer): TEventID;
   function ExtractDataBytesAsInt(StartByteIndex, EndByteIndex: Integer): DWORD;
   function ExtractDataBytesAsNodeID(StartIndex: Integer; var ANodeID: TNodeID): TNodeID;
   function ExtractDataBytesAsString(StartIndex, Count: Integer): String;
   function ExtractDataBytesAsWord(StartIndex: Integer): Word;
+  function ExtractDataBytesAsDWord(StartIndex: Integer): DWORD;
   function ExtractDataBytesAsHex(StartByteIndex, EndByteIndex: Integer): string;
   function DestinationMatchs(TestAliasID: Word; TestNodeID: TNodeID): Boolean;
-  function ExtractNodeIdentifications(ForceEvaluation: Boolean): TLccNodeIdentificationObjectList;
+  function ExtractNodeIdentifications(ForceEvaluation, IgnoreCANMessages: Boolean): TLccNodeIdentificationObjectList;
+  function ExtractNodeIdentificationToCallback(NodeIdentificationCallback: TNodeIdentificationCallback; UnMappedOnly, IgnoreCANMessages: Boolean): Boolean;
 
   function LoadByGridConnectStr(GridConnectStr: String): Boolean;
   function LoadByLccTcp(var ByteArray: TLccDynamicByteArray): Boolean;
@@ -256,8 +211,7 @@ public
   procedure LoadTractionControllerRelease(ASourceID: TNodeID; ASourceAlias: Word; ADestID: TNodeID; ADestAlias: Word; ANodeID: TNodeID; AnAlias: Word);
   procedure LoadTractionControllerQuery(ASourceID: TNodeID; ASourceAlias: Word; ADestID: TNodeID; ADestAlias: Word);
   procedure LoadTractionControllerQueryReply(ASourceID: TNodeID; ASourceAlias: Word; ADestID: TNodeID; ADestAlias: Word; AControllerID: TNodeID);
-  procedure LoadTractionControllerChangingNotify(ASourceID: TNodeID; ASourceAlias: Word; ADestID: TNodeID; ADestAlias: Word; AControllerNodeID: TNodeID);
-  procedure LoadTractionControllerChangingReply(ASourceID: TNodeID; ASourceAlias: Word; ADestID: TNodeID; ADestAlias: Word; Allow: Boolean);
+  procedure LoadTractionControllerChangedNotify(ASourceID: TNodeID; ASourceAlias: Word; ADestID: TNodeID; ADestAlias: Word; AControllerNodeID: TNodeID);
   procedure LoadTractionListenerAttach(ASourceID: TNodeID; ASourceAlias: Word; ADestID: TNodeID; ADestAlias: Word; ListenerFlags: Byte; AListenerNodeID: TNodeID);
   procedure LoadTractionListenerAttachReply(ASourceID: TNodeID; ASourceAlias: Word; ADestID: TNodeID; ADestAlias: Word; AListenerNodeID: TNodeID; ReplyCode: Word);
   procedure LoadTractionListenerDetach(ASourceID: TNodeID; ASourceAlias: Word; ADestID: TNodeID; ADestAlias: Word; ListenerFlags: Byte; AListenerNodeID: TNodeID);
@@ -322,9 +276,8 @@ class  function TractionSearchEncodeNMRA(ForceLongAddress: Boolean; SpeedStep: T
   procedure LoadFunctionConfigurationRead(ASourceID: TNodeID; ASourceAlias: Word; ADestID: TNodeID; ADestAlias: Word; FunctionAddress: DWord; Count: Integer);
   procedure LoadFunctionConfigurationWrite(ASourceID: TNodeID; ASourceAlias: Word; ADestID: TNodeID; ADestAlias: Word; FunctionAddress: DWord; Count: Integer; Functions: TFunctionStatesArray);
   // CDI
-  procedure LoadCDIRequest(ASourceID: TNodeID; ASourceAlias: Word; ADestID: TNodeID; ADestAlias: Word);
+  procedure LoadCDIRequest(ASourceID: TNodeID; ASourceAlias: Word; ADestID: TNodeID; ADestAlias: Word; Address: DWORD);
   // Datagram
-  procedure LoadDatagram(ASourceID: TNodeID; ASourceAlias: Word; ADestID: TNodeID; ADestAlias: Word);
   procedure LoadDatagramAck(ASourceID: TNodeID; ASourceAlias: Word; ADestID: TNodeID; ADestAlias: Word; Ok: Boolean; ReplyPending: Boolean; TimeOutValueN: Byte);
   procedure LoadDatagramRejected(ASourceID: TNodeID; ASourceAlias: Word; ADestID: TNodeID; ADestAlias: Word; Reason: Word);
   // ConfigurationMemory
@@ -334,9 +287,10 @@ class  function TractionSearchEncodeNMRA(ForceLongAddress: Boolean; SpeedStep: T
   procedure LoadConfigMemRead(ASourceID: TNodeID; ASourceAlias: Word; ADestID: TNodeID; ADestAlias: Word; AddressSpace: Byte; ConfigMemAddress: DWord; ReadCount: Byte);
   procedure LoadConfigMemReadReply(ASourceID: TNodeID; ASourceAlias: Word; ADestID: TNodeID; ADestAlias: Word; AddressSpace: Byte; ConfigMemAddress: DWord; ConfigMemData: array of Byte);
   procedure LoadConfigMemReadReplyError(ASourceID: TNodeID; ASourceAlias: Word; ADestID: TNodeID; ADestAlias: Word; AddressSpace: Byte; ConfigMemAddress: DWord; ErrorCode: Word; ErrorCodeString: string);
-  procedure LoadConfigMemWriteInteger(ASourceID: TNodeID; ASourceAlias: Word; ADestID: TNodeID; ADestAlias: Word; AddressSpace: Byte; ConfigMemAddress: DWord; IntegerSize: Byte; DataInteger: Integer);
-  procedure LoadConfigMemWriteString(ASourceID: TNodeID; ASourceAlias: Word; ADestID: TNodeID; ADestAlias: Word; AddressSpace: Byte; ConfigMemAddress: DWord; AString: String);
-  procedure LoadConfigMemWriteArray(ASourceID: TNodeID; ASourceAlias: Word; ADestID: TNodeID; ADestAlias: Word; AddressSpace: Byte; ConfigMemAddress: DWord; ArraySize: Integer; AnArray: array of Byte);
+  procedure LoadConfigMemWrite(ASourceID: TNodeID; ASourceAlias: Word; ADestID: TNodeID; ADestAlias: Word; AddressSpace: Byte; ConfigMemAddress: DWord; AnArray: array of Byte);
+  procedure LoadConfigMemWriteReply(ASourceID: TNodeID; ASourceAlias: Word; ADestID: TNodeID; ADestAlias: Word; AddressSpace: Byte; ConfigMemAddress: DWord);
+  procedure LoadConfigMemWriteReplyError(ASourceID: TNodeID; ASourceAlias: Word; ADestID: TNodeID; ADestAlias: Word; AddressSpace: Byte; ConfigMemAddress: DWord; ErrorCode: Word; ErrorCodeString: string);
+  function DecodeMemorySpace: Byte;
   // MTIs
   procedure LoadOptionalInteractionRejected(ASourceID: TNodeID; ASourceAlias: Word; ADestID: TNodeID; ADestAlias: Word; Reason: Word; AnMTI: Word);
 
@@ -616,7 +570,7 @@ begin
                 begin
                   Result := Result + ' Controller Config Query';
                 end;
-              TRACTION_CONTROLLER_CONFIG_CHANGING_NOTIFY :
+              TRACTION_CONTROLLER_CONFIG_CHANGED_NOTIFY :
                 begin
                   if AMessage.ExtractDataBytesAsInt(2, 2) and TRACTION_FLAGS_ALIAS_INCLUDED <> 0 then
                     Result := Result + ' Controller Config Notify - Flags: ' + AMessage.ExtractDataBytesAsHex(2, 2) + ' Controller ID ' + AMessage.ExtractDataBytesAsHex(3, 6) + AMessage.ExtractDataBytesAsHex(7, 8) + ' [Alias: ' + AMessage.ExtractDataBytesAsHex(9, 10) + ']'
@@ -625,12 +579,12 @@ begin
                 end
             end
           end;
-        TRACTION_LISTENER :
+        TRACTION_LISTENER_CONFIG :
           begin
             case AMessage.DataArray[1] of
-              TRACTION_LISTENER_ATTACH : Result := Result + 'Consist Listener Attach';
-              TRACTION_LISTENER_DETACH : Result := Result + 'Consist Listener Detach';
-              TRACTION_LISTENER_QUERY : Result := Result + 'Consit Listener Query';
+              TRACTION_LISTENER_CONFIG_ATTACH : Result := Result + 'Consist Listener Attach';
+              TRACTION_LISTENER_CONFIG_DETACH : Result := Result + 'Consist Listener Detach';
+              TRACTION_LISTENER_CONFIG_QUERY : Result := Result + 'Consit Listener Query';
             end
           end;
         TRACTION_MANAGE :
@@ -728,12 +682,12 @@ begin
                 end;
             end
           end;
-        TRACTION_LISTENER :
+        TRACTION_LISTENER_CONFIG :
           begin
             case AMessage.DataArray[1] of
-              TRACTION_LISTENER_ATTACH : Result := Result + 'Consist Listener Attach Reply';
-              TRACTION_LISTENER_DETACH : Result := Result + 'Consist Listener Detach Reply';
-              TRACTION_LISTENER_QUERY : Result := Result + 'Consit Listener Query Reply';
+              TRACTION_LISTENER_CONFIG_ATTACH : Result := Result + 'Consist Listener Attach Reply';
+              TRACTION_LISTENER_CONFIG_DETACH : Result := Result + 'Consist Listener Detach Reply';
+              TRACTION_LISTENER_CONFIG_QUERY : Result := Result + 'Consit Listener Query Reply';
             end
           end;
         TRACTION_MANAGE :
@@ -744,239 +698,6 @@ begin
           end
     else
       Result := Result + 'Unknown Traction Reply Operation';
-    end;
-  end;
-end;
-
-{ TLccNodeIdentificationObject }
-
-procedure TLccNodeIdentificationObject.AssignID(ANodeID: TNodeID; AnAlias: Word);
-begin
-  Alias := AnAlias;
-  NodeID := ANodeID;
-  FActive := True;
-end;
-
-function TLccNodeIdentificationObject.Clone: TLccNodeIdentificationObject;
-begin
-  Result := TLccNodeIdentificationObject.Create;
-  Result.NodeID := NodeID;
-  Result.Alias := Alias;
-  Result.Active := Active;
-  Result.AbandonCount := 0;
-end;
-
-function TLccNodeIdentificationObject.Compare(TestObject: TLccNodeIdentificationObject): Boolean;
-begin
-  Result := (TestObject.Alias = Alias) and (TestObject.NodeID[0] = NodeID[0]) and (TestObject.NodeID[0] = NodeID[0])
-end;
-
-function TLccNodeIdentificationObject.Compare(TestMapping: TLccAliasMapping): Boolean;
-begin
-  Result := (TestMapping.NodeAlias = Alias) and (TestMapping.NodeID[0] = NodeID[0]) and (TestMapping.NodeID[0] = NodeID[0])
-end;
-
-function TLccNodeIdentificationObject.CompareEitherOr(TestObject: TLccNodeIdentificationObject): Boolean;
-begin
-  Result := (TestObject.Alias = Alias) or ((TestObject.NodeID[0] = NodeID[0]) and (TestObject.NodeID[0] = NodeID[0]))
-end;
-
-function TLccNodeIdentificationObject.CompareEitherOr(TestMapping: TLccAliasMapping): Boolean;
-begin
-  Result := (TestMapping.NodeAlias = Alias) or ((TestMapping.NodeID[0] = NodeID[0]) and (TestMapping.NodeID[0] = NodeID[0]))
-end;
-
-function TLccNodeIdentificationObject.Valid: Boolean;
-begin
-  Result := (Alias <> 0) or ((NodeID[0] <> 0) or (NodeID[1] <> 0))
-end;
-
-{ TLccNodeIdentificationObjectList }
-
-function TLccNodeIdentificationObjectList.GetDestination: TLccNodeIdentificationObject;
-begin
-  Result := TLccNodeIdentificationObject(Items[1]);
-end;
-
-function TLccNodeIdentificationObjectList.GetIdentification(Index: Integer): TLccNodeIdentificationObject;
-begin
-  Result := nil;
-  if Index < Count then
-    Result := TLccNodeIdentificationObject(Items[Index]);
-end;
-
-function TLccNodeIdentificationObjectList.GetSource: TLccNodeIdentificationObject;
-begin
-  Result := TLccNodeIdentificationObject(Items[0]);
-end;
-
-procedure TLccNodeIdentificationObjectList.SetIdentification(Index: Integer; AValue: TLccNodeIdentificationObject);
-begin
-  if Index < Count then
-  begin
-    TObject(Items[Index]).Free;
-    Items[Index] := AValue;
-  end;
-end;
-
-constructor TLccNodeIdentificationObjectList.Create(AutoCreateSourceDestination: Boolean);
-begin
-  inherited Create;
-  if AutoCreateSourceDestination then
-  begin
-    Add(TLccNodeIdentificationObject.Create);  // Create the Source
-    Add(TLccNodeIdentificationObject.Create);  // Create the Destination
-  end
-end;
-
-destructor TLccNodeIdentificationObjectList.Destroy;
-begin
-  Clear;
-  inherited Destroy;
-end;
-
-procedure TLccNodeIdentificationObjectList.Clear;
-var
-  i: Integer;
-begin
-  try
-    for i := 0 to Count - 1 do
-    begin
-      TObject(Items[i]).Free
-    end;
-  finally
-    inherited Clear;
-  end;
-end;
-
-function TLccNodeIdentificationObjectList.IdentificationsValid: Boolean;
-var
-  i: Integer;
-  TempValid: Boolean;
-begin
-  Result := False;
-  for i := 0 to Count - 1 do
-  begin
-    TempValid := True;
-    if NodeIdentification[i].Active then
-      if not NodeIdentification[i].Valid then
-      begin
-        TempValid := False;
-        Break
-      end;
-    Result := TempValid;
-  end;
-end;
-
-function TLccNodeIdentificationObjectList.IsDuplicate(DestinationObject: TLccNodeIdentificationObject): Boolean;
-var
-  i: Integer;
-begin
-  Result := False;
-  for i := 0 to Count - 1 do
-  begin
-    if DestinationObject.CompareEitherOr(NodeIdentification[i]) then
-    begin
-      Result := True;
-      Break
-    end;
-  end;
-end;
-
-function TLccNodeIdentificationObjectList.IsDuplicate(ANodeID: TNodeID; AnAlias: Word): Boolean;
-var
-  i: Integer;
-  NodeIdentificationObject: TLccNodeIdentificationObject;
-begin
-  Result := False;
-  for i := 0 to Count - 1 do
-  begin
-    NodeIdentificationObject := TLccNodeIdentificationObject( Items[i]);
-    if (NodeIdentificationObject.NodeID[0] = ANodeID[0]) and (NodeIdentificationObject.NodeID[1] = ANodeID[1]) and (NodeIdentificationObject.Alias = AnAlias) then
-    begin
-      Result := True;
-      Break
-    end;
-  end;
-end;
-
-function TLccNodeIdentificationObjectList.ProcessNewMapping(NewMapping: TLccAliasMapping): Boolean;
-var
-  i: Integer;
-begin
-  Result := False;
-  if Assigned(NewMapping) then
-    begin
-    for i := 0 to Count - 1 do
-    begin
-      if NodeIdentification[i].Active and NodeIdentification[i].CompareEitherOr(NewMapping) then
-        NodeIdentification[i].AssignID(NewMapping.NodeID, NewMapping.NodeAlias);
-    end;
-    Result := IdentificationsValid;  // This is the cheap and easy way... may update
-  end;
-end;
-
-procedure TLccNodeIdentificationObjectList.RemoveIdentification(
-  AliasMapping: TLccAliasMapping);
-var
-  i: Integer;
-begin
-  for i := 0 to Count - 1 do
-  begin
-    if NodeIdentification[i].Compare(AliasMapping) then
-    begin
-      NodeIdentification[i].Free;
-      Delete(i);
-      Break
-    end;
-  end;
-end;
-
-procedure TLccNodeIdentificationObjectList.ClearIdentifications(AutoCreateSourceDestination: Boolean);
-begin
-  Clear;
-  if AutoCreateSourceDestination then
-  begin
-    Add(TLccNodeIdentificationObject.Create);  // Create the Source
-    Add(TLccNodeIdentificationObject.Create);  // Create the Destination
-  end;
-end;
-
-function TLccNodeIdentificationObjectList.LogOut(AnAlias: Word): Boolean;
-var
-  i: Integer;
-begin
-  Result := False;
-  for i := 0 to Count - 1 do
-  begin
-    Result := TLccNodeIdentificationObject(Items[i]).Alias = AnAlias;
-    if Result then
-      Break
-  end;
-end;
-
-function TLccNodeIdentificationObjectList.AddNodeIdentificationObject(ANodeID: TNodeID; AnAlias: Word): TLccNodeIdentificationObject;
-begin
-  Result := TLccNodeIdentificationObject.Create;
-  Result.AssignID(ANodeID, AnAlias);
-  Add(Result)
-end;
-
-function TLccNodeIdentificationObjectList.RetryCountMaxedOut(ATestCount: Integer): Boolean;
-var
-  i: Integer;
-begin
-  Result := True;
-
-  for i := 0 to Count - 1 do
-  begin
-    if TLccNodeIdentificationObject( Items[i]).Valid then
-    begin
-      if TLccNodeIdentificationObject( Items[i]).AbandonCount < ATestCount then
-      begin
-        Result := False;
-        Break
-      end;
     end;
   end;
 end;
@@ -1061,7 +782,7 @@ begin
   FDataArray[StartByteIndex+3] := _Lo(DoubleWord);
 end;
 
-procedure TLccMessage.InsertWordAsDataBytes(AWord: DWord; StartByteIndex: Integer);
+procedure TLccMessage.InsertWordAsDataBytes(AWord: Word; StartByteIndex: Integer);
 begin
   FDataArray[StartByteIndex]   := _Hi(AWord);
   FDataArray[StartByteIndex+1] := _Lo(AWord);
@@ -1092,12 +813,14 @@ begin
   inherited Create;
   CAN := TLccCANMessage.Create;
   FNodeIdentifications := TLccNodeIdentificationObjectList.Create;
+  FWorkerNodeIdentifcationObject := TLccNodeIdentificationObject.Create;
 end;
 
 destructor TLccMessage.Destroy;
 begin
   FreeAndNil(FCAN);
   FreeAndNil(FNodeIdentifications);
+  FreeAndNil(FWorkerNodeIdentifcationObject);
   inherited Destroy;
 end;
 
@@ -1111,6 +834,17 @@ begin
     2 : Result := MSI_ALL;
     3 : Result := MSI_CDI;
   end;
+end;
+
+function TLccMessage.ExtractDataBytesAsDWord(StartIndex: Integer): DWORD;
+begin
+  Result := DataArray[StartIndex];
+  Result := Result shl 8;
+  Result := Result or DataArray[StartIndex+1];
+  Result := Result shl 8;
+  Result := Result or DataArray[StartIndex+2];
+  Result := Result shl 8;
+  Result := Result or DataArray[StartIndex+3];
 end;
 
 function TLccMessage.ExtractDataBytesAsEventID(StartIndex: Integer): TEventID;
@@ -1615,7 +1349,7 @@ begin
     Result := (TestNodeID[0] = DestID[0]) and (TestNodeID[1] = DestID[1]);
 end;
 
-function TLccMessage.ExtractNodeIdentifications(ForceEvaluation: Boolean): TLccNodeIdentificationObjectList;
+function TLccMessage.ExtractNodeIdentifications(ForceEvaluation, IgnoreCANMessages: Boolean): TLccNodeIdentificationObjectList;
 
   procedure NewIdentificationItem(ANodeID: TNodeID);
   var
@@ -1632,6 +1366,13 @@ function TLccMessage.ExtractNodeIdentifications(ForceEvaluation: Boolean): TLccN
 var
   ANodeID: TNodeID;
 begin
+  ANodeID := NULL_NODE_ID;
+
+  Result := NodeIdentifications;
+
+  if IgnoreCANMessages and IsCAN then
+    Exit;
+
   if ForceEvaluation or (NodeIdentifications.Count = 0) then
   begin
     NodeIdentifications.ClearIdentifications;
@@ -1648,24 +1389,14 @@ begin
                 case DataArray[1] of
                   TRACTION_CONTROLLER_CONFIG_ASSIGN,
                   TRACTION_CONTROLLER_CONFIG_RELEASE,
-                  TRACTION_CONTROLLER_CONFIG_CHANGING_NOTIFY :
-                  begin
-                    ANodeID := NULL_NODE_ID;
-                    ExtractDataBytesAsNodeID(3, ANodeID);
-                    NewIdentificationItem(ANodeID);
-                  end;
+                  TRACTION_CONTROLLER_CONFIG_CHANGED_NOTIFY : NewIdentificationItem(ExtractDataBytesAsNodeID(3, ANodeID));
                 end
               end;
-            TRACTION_LISTENER :
+            TRACTION_LISTENER_CONFIG :
               begin
                 case DataArray[1] of
-                  TRACTION_LISTENER_ATTACH,
-                  TRACTION_LISTENER_DETACH :
-                    begin
-                      ANodeID := NULL_NODE_ID;
-                      ExtractDataBytesAsNodeID(3, ANodeID);
-                      NewIdentificationItem(ANodeID);
-                    end;
+                  TRACTION_LISTENER_CONFIG_ATTACH,
+                  TRACTION_LISTENER_CONFIG_DETACH : NewIdentificationItem(ExtractDataBytesAsNodeID(3, ANodeID));
                 end;
               end
           end
@@ -1678,29 +1409,110 @@ begin
                 case DataArray[1] of
                   TRACTION_CONTROLLER_CONFIG_QUERY :
                     begin
-                     ANodeID := NULL_NODE_ID;
-                     ExtractDataBytesAsNodeID(3, ANodeID);
-                     if not NullNodeID(ANodeID) then    // NULL is valid for no controller assigned
+                     if not NullNodeID(ExtractDataBytesAsNodeID(3, ANodeID)) then    // NULL is valid for no controller assigned
                        NewIdentificationItem(ANodeID);
                     end;
                   end
               end;
 
-             TRACTION_LISTENER :
+             TRACTION_LISTENER_CONFIG :
                case DataArray[1] of
-                  TRACTION_LISTENER_ATTACH,
-                  TRACTION_LISTENER_DETACH :
-                    begin
-                      ANodeID := NULL_NODE_ID;
-                      ExtractDataBytesAsNodeID(2, ANodeID);
-                      NewIdentificationItem(ANodeID);
-                    end;
+                  TRACTION_LISTENER_CONFIG_ATTACH,
+                  TRACTION_LISTENER_CONFIG_DETACH : NewIdentificationItem(ExtractDataBytesAsNodeID(2, ANodeID));
                 end;
           end;
         end;
     end;
   end;
-  Result := NodeIdentifications;
+end;
+
+function TLccMessage.ExtractNodeIdentificationToCallback(NodeIdentificationCallback: TNodeIdentificationCallback; UnMappedOnly, IgnoreCANMessages: Boolean): Boolean;
+
+  function IdentifyIdentificationItem(ANodeID: TNodeID; AnAliasID: Word; var OuterResult: Boolean): TLccAliasMapping;
+  begin
+    Result := AliasServer.FindMapping(ANodeID, AnAliasID);
+    if UnMappedOnly then
+    begin
+      if not Assigned(Result) then
+      begin
+        WorkerNodeIdentifcationObject.AssignID(ANodeID, AnAliasID);
+        NodeIdentificationCallback(WorkerNodeIdentifcationObject);
+        OuterResult := False;
+      end;
+    end else
+    begin
+      WorkerNodeIdentifcationObject.AssignID(ANodeID, AnAliasID);
+      NodeIdentificationCallback(WorkerNodeIdentifcationObject);
+    end;
+  end;
+
+var
+  ANodeID: TNodeID;
+  AnAliasMapping: TLccAliasMapping;
+begin
+  Result := True;
+
+  if IgnoreCANMessages and IsCAN then
+    Exit;
+
+  ANodeID := NULL_NODE_ID;
+
+  AnAliasMapping := IdentifyIdentificationItem(SourceID, CAN.SourceAlias, Result);
+  if Assigned(AnAliasMapping) then
+  begin
+    SourceID := AnAliasMapping.NodeID;
+    CAN.SourceAlias := AnAliasMapping.NodeAlias;
+  end;
+
+  if HasDestination then
+  begin
+    AnAliasMapping := IdentifyIdentificationItem(DestID, CAN.DestAlias, Result);
+    if Assigned(AnAliasMapping) then
+    begin
+      DestID := AnAliasMapping.NodeID;
+      CAN.DestAlias := AnAliasMapping.NodeAlias;
+    end;
+  end;
+
+  case MTI of
+    MTI_TRACTION_REQUEST :
+      begin
+        case DataArray[0] of
+          TRACTION_CONTROLLER_CONFIG :
+            begin
+              case DataArray[1] of
+                TRACTION_CONTROLLER_CONFIG_ASSIGN,
+                TRACTION_CONTROLLER_CONFIG_RELEASE,
+                TRACTION_CONTROLLER_CONFIG_CHANGED_NOTIFY : IdentifyIdentificationItem(ExtractDataBytesAsNodeID(3, ANodeID), 0, Result);
+              end
+            end;
+          TRACTION_LISTENER_CONFIG :
+            begin
+              case DataArray[1] of
+                TRACTION_LISTENER_CONFIG_ATTACH,
+                TRACTION_LISTENER_CONFIG_DETACH : IdentifyIdentificationItem(ExtractDataBytesAsNodeID(3, ANodeID), 0, Result);
+              end;
+            end
+        end
+      end;
+        MTI_TRACTION_REPLY :
+      begin
+        case DataArray[0] of
+          TRACTION_CONTROLLER_CONFIG :
+            begin
+              case DataArray[1] of
+                TRACTION_CONTROLLER_CONFIG_QUERY : IdentifyIdentificationItem(ExtractDataBytesAsNodeID(3, ANodeID), 0, Result);
+                end
+            end;
+
+           TRACTION_LISTENER_CONFIG :
+             case DataArray[1] of
+                TRACTION_LISTENER_CONFIG_ATTACH,
+                TRACTION_LISTENER_CONFIG_DETACH : IdentifyIdentificationItem(ExtractDataBytesAsNodeID(2, ANodeID), 0, Result);
+              end;
+        end;
+      end;
+  end;
 end;
 
 procedure TLccMessage.ZeroFields;
@@ -2292,16 +2104,6 @@ begin
   MTI := MTI_CONSUMER_IDENTIFY;
 end;
 
-procedure TLccMessage.LoadDatagram(ASourceID: TNodeID; ASourceAlias: Word; ADestID: TNodeID; ADestAlias: Word);
-begin
-  ZeroFields;
-  SourceID := ASourceID;
-  DestID := ADestID;
-  CAN.SourceAlias := ASourceAlias;
-  CAN.DestAlias := ADestAlias;
-  MTI := MTI_DATAGRAM;
-end;
-
 procedure TLccMessage.LoadProducerIdentify(ASourceID: TNodeID; ASourceAlias: Word; var Event: TEventID);
 begin
   ZeroFields;
@@ -2608,7 +2410,7 @@ begin
   MTI := MTI_TRACTION_REPLY;
 end;
 
-procedure TLccMessage.LoadTractionControllerChangingNotify(ASourceID: TNodeID;
+procedure TLccMessage.LoadTractionControllerChangedNotify(ASourceID: TNodeID;
   ASourceAlias: Word; ADestID: TNodeID; ADestAlias: Word; AControllerNodeID: TNodeID);
 begin
   ZeroFields;
@@ -2618,28 +2420,10 @@ begin
   CAN.DestAlias := ADestAlias;
   DataCount := 9;
   FDataArray[0] := TRACTION_CONTROLLER_CONFIG;
-  FDataArray[1] := TRACTION_CONTROLLER_CONFIG_CHANGING_NOTIFY;
+  FDataArray[1] := TRACTION_CONTROLLER_CONFIG_CHANGED_NOTIFY;
   FDataArray[2] := 0;
   InsertNodeID(3, AControllerNodeID);
   MTI := MTI_TRACTION_REQUEST;
-end;
-
-procedure TLccMessage.LoadTractionControllerChangingReply(ASourceID: TNodeID;
-  ASourceAlias: Word; ADestID: TNodeID; ADestAlias: Word; Allow: Boolean);
-begin
-  ZeroFields;
-  SourceID := ASourceID;
-  DestID := ADestID;
-  CAN.SourceAlias := ASourceAlias;
-  CAN.DestAlias := ADestAlias;
-  MTI := MTI_TRACTION_REPLY;
-  DataCount := 3;
-  FDataArray[0] := TRACTION_CONTROLLER_CONFIG;
-  FDataArray[1] := TRACTION_CONTROLLER_CONFIG_CHANGED_NOTIFY;
-  if Allow then
-    FDataArray[2] := 0
-  else
-    FDataArray[2] := TRACTION_CONTROLLER_CONFIG_ASSIGN_REPLY_REFUSE_ASSIGNED_CONTROLLER
 end;
 
 procedure TLccMessage.LoadTractionListenerAttach(ASourceID: TNodeID;
@@ -2652,8 +2436,8 @@ begin
   CAN.SourceAlias := ASourceAlias;
   CAN.DestAlias := ADestAlias;
   DataCount := 9;
-  FDataArray[0] := TRACTION_LISTENER;
-  FDataArray[1] := TRACTION_LISTENER_ATTACH;
+  FDataArray[0] := TRACTION_LISTENER_CONFIG;
+  FDataArray[1] := TRACTION_LISTENER_CONFIG_ATTACH;
   FDataArray[2] := ListenerFlags;
   InsertNodeID(3, AListenerNodeID);
   MTI := MTI_TRACTION_REQUEST;
@@ -2669,8 +2453,8 @@ begin
   CAN.SourceAlias := ASourceAlias;
   CAN.DestAlias := ADestAlias;
   DataCount := 10;
-  FDataArray[0] := TRACTION_LISTENER;
-  FDataArray[1] := TRACTION_LISTENER_ATTACH;
+  FDataArray[0] := TRACTION_LISTENER_CONFIG;
+  FDataArray[1] := TRACTION_LISTENER_CONFIG_ATTACH;
   InsertNodeID(2, AListenerNodeID);
   FDataArray[8] := Hi(ReplyCode);
   FDataArray[9] := Lo(ReplyCode);
@@ -2687,8 +2471,8 @@ begin
   CAN.SourceAlias := ASourceAlias;
   CAN.DestAlias := ADestAlias;
   DataCount := 9;
-  FDataArray[0] := TRACTION_LISTENER;
-  FDataArray[1] := TRACTION_LISTENER_DETACH;
+  FDataArray[0] := TRACTION_LISTENER_CONFIG;
+  FDataArray[1] := TRACTION_LISTENER_CONFIG_DETACH;
   FDataArray[2] := ListenerFlags;
   InsertNodeID(3, AListenerNodeID);
   MTI := MTI_TRACTION_REQUEST;
@@ -2704,8 +2488,8 @@ begin
   CAN.SourceAlias := ASourceAlias;
   CAN.DestAlias := ADestAlias;
   DataCount := 10;
-  FDataArray[0] := TRACTION_LISTENER;
-  FDataArray[1] := TRACTION_LISTENER_DETACH;
+  FDataArray[0] := TRACTION_LISTENER_CONFIG;
+  FDataArray[1] := TRACTION_LISTENER_CONFIG_DETACH;
   InsertNodeID(2, AListenerNodeID);
   FDataArray[8] := Hi(ReplyCode);
   FDataArray[9] := Lo(ReplyCode);
@@ -2721,8 +2505,8 @@ begin
   CAN.SourceAlias := ASourceAlias;
   CAN.DestAlias := ADestAlias;
   DataCount := 3;
-  FDataArray[0] := TRACTION_LISTENER;
-  FDataArray[1] := TRACTION_LISTENER_QUERY;
+  FDataArray[0] := TRACTION_LISTENER_CONFIG;
+  FDataArray[1] := TRACTION_LISTENER_CONFIG_QUERY;
   FDataArray[2] := Index;
   MTI := MTI_TRACTION_REQUEST;
 end;
@@ -2735,8 +2519,8 @@ begin
   CAN.SourceAlias := ASourceAlias;
   CAN.DestAlias := ADestAlias;
   DataCount := 2;
-  FDataArray[0] := TRACTION_LISTENER;
-  FDataArray[1] := TRACTION_LISTENER_QUERY;
+  FDataArray[0] := TRACTION_LISTENER_CONFIG;
+  FDataArray[1] := TRACTION_LISTENER_CONFIG_QUERY;
   MTI := MTI_TRACTION_REQUEST;
 end;
 
@@ -2752,14 +2536,14 @@ begin
   if NullNodeID(AListenerNodeID) then
   begin           // Invalid Index the reply is no data other than the message codes
     DataCount := 3;
-    FDataArray[0] := TRACTION_LISTENER;
-    FDataArray[1] := TRACTION_LISTENER_QUERY;
+    FDataArray[0] := TRACTION_LISTENER_CONFIG;
+    FDataArray[1] := TRACTION_LISTENER_CONFIG_QUERY;
     FDataArray[2] := ListenerCount
   end else
   begin          // Valid index so sent the full gamit of info
     DataCount := 11;
-    FDataArray[0] := TRACTION_LISTENER;
-    FDataArray[1] := TRACTION_LISTENER_QUERY;
+    FDataArray[0] := TRACTION_LISTENER_CONFIG;
+    FDataArray[1] := TRACTION_LISTENER_CONFIG_QUERY;
     FDataArray[2] := ListenerCount;
     FDataArray[3] := ListenerNodeIndex;
     FDataArray[4] := ListenerFlags;
@@ -2966,7 +2750,9 @@ begin
   MTI := MTI_DATAGRAM;
 end;
 
-procedure TLccMessage.LoadCDIRequest(ASourceID: TNodeID; ASourceAlias: Word; ADestID: TNodeID; ADestAlias: Word);
+procedure TLccMessage.LoadCDIRequest(ASourceID: TNodeID; ASourceAlias: Word; ADestID: TNodeID; ADestAlias: Word; Address: DWORD);
+var
+  TempHi, TempLo: Word;
 begin
   // Really should be a Get Address Space Info message here to make sure the start address is 0.....
   ZeroFields;
@@ -2977,10 +2763,12 @@ begin
   DataCount := 8;
   FDataArray[0] := DATAGRAM_PROTOCOL_CONFIGURATION;
   FDataArray[1] := MCP_READ;
-  FDataArray[2] := 0;
-  FDataArray[3] := 0;
-  FDataArray[4] := 0;
-  FDataArray[5] := 0;
+  TempHi := Hi(Address);
+  TempLo := Lo(Address);
+  FDataArray[2] := Hi(TempHi);
+  FDataArray[3] := Lo(TempHi);
+  FDataArray[4] := Hi(TempLo);  ;
+  FDataArray[5] := Lo(TempLo);
   FDataArray[6] := MSI_CDI;
   FDataArray[7] := 64;                     // Read until the end.....
   MTI := MTI_DATAGRAM;
@@ -3044,7 +2832,7 @@ begin
   CAN.SourceAlias := ASourceAlias;
   CAN.DestAlias := ADestAlias;
   FDataArray[0] := DATAGRAM_PROTOCOL_CONFIGURATION;
-  FDataArray[1] := MCP_OP_GET_CONFIG;
+  FDataArray[1] := MCP_OP_GET_CONFIG_OPTIONS;
   FDataCount := 2;
   FMTI := MTI_DATAGRAM;
 end;
@@ -3053,9 +2841,8 @@ procedure TLccMessage.LoadConfigMemRead(ASourceID: TNodeID;
   ASourceAlias: Word; ADestID: TNodeID; ADestAlias: Word; AddressSpace: Byte;
   ConfigMemAddress: DWord; ReadCount: Byte);
 begin
-  Assert(ReadCount > 64, 'TLccMessage.LoadConfigMemRead must be less than 64 bytes');
+  Assert(ReadCount <= 64, 'TLccMessage.LoadConfigMemRead must be less than 64 bytes');
 
-  // Really should be a Get Address Space Info message here to make sure the start address is 0.....
   ZeroFields;
   SourceID := ASourceID;
   DestID := ADestID;
@@ -3124,7 +2911,7 @@ begin
     case AddressSpace of
       MSI_CDI    : FDataArray[1] := MCP_READ_REPLY_CDI;
       MSI_ALL    : FDataArray[1] := MCP_READ_REPLY_ALL;
-      MSI_CONFIG : FDataArray[1] := MCP_READ_REPLY_CONFIGURATION;
+      MSI_CONFIG : FDataArray[1] := MCP_READ_REPLY_CONFIG;
     end;
     FDataArray[2] := _Highest(ConfigMemAddress);
     FDataArray[3] := _Higher(ConfigMemAddress);
@@ -3153,7 +2940,7 @@ begin
   // Use the long version with the optional Byte 6 if the memory space is not one of the original 3 (CDI, All, Config)
   if AddressSpace < MSI_CONFIG then
   begin
-    FDataArray[1] := MCP_READ_REPLY;
+    FDataArray[1] := MCP_READ_REPLY_FAILURE;
     FDataArray[2] := _Highest(ConfigMemAddress);
     FDataArray[3] := _Higher(ConfigMemAddress);
     FDataArray[4] := _Hi(ConfigMemAddress);
@@ -3163,21 +2950,21 @@ begin
     FDataArray[8] := Lo(ErrorCode);
 
     {$IFDEF LCC_MOBILE}
-    for i := 1 to Length(ErrorCodeString) do
-      FDataArray[i+8] := Byte(ErrorCodeString[i]);
-    {$ELSE}
     for i := 0 to Length(ErrorCodeString) - 1 do
-      FDataArray[i+9] := Byte(ErrorCodeString[i]);
+      FDataArray[i + 9] := Byte(ErrorCodeString[i]);
+    {$ELSE}
+    for i := 1 to Length(ErrorCodeString) do
+      FDataArray[i + 8] := Byte(ErrorCodeString[i]);
     {$ENDIF}
-    FDataArray[9+Length(ErrorCodeString)] := Byte(#0);
+    FDataArray[9 + Length(ErrorCodeString)] := Byte(#0);
 
-    DataCount := 9+Length(ErrorCodeString)+1;
+    DataCount := 9 + Length(ErrorCodeString) + 1;   // 9 header bytes + null
   end else
   begin
     case AddressSpace of
-      MSI_CDI    : FDataArray[1] := MCP_READ_REPLY_CDI;
-      MSI_ALL    : FDataArray[1] := MCP_READ_REPLY_ALL;
-      MSI_CONFIG : FDataArray[1] := MCP_READ_REPLY_CONFIGURATION;
+      MSI_CDI    : FDataArray[1] := MCP_READ_REPLY_FAILURE_CDI;
+      MSI_ALL    : FDataArray[1] := MCP_READ_REPLY_FAILURE_ALL;
+      MSI_CONFIG : FDataArray[1] := MCP_READ_REPLY_FAILURE_CONFIG;
     end;
     FDataArray[2] := _Highest(ConfigMemAddress);
     FDataArray[3] := _Higher(ConfigMemAddress);
@@ -3187,92 +2974,37 @@ begin
     FDataArray[7] := Lo(ErrorCode);
 
     {$IFDEF LCC_MOBILE}
-    for i := 1 to Length(ErrorCodeString) do
-      FDataArray[i+7] := Byte(ErrorCodeString[i]);
-    {$ELSE}
     for i := 0 to Length(ErrorCodeString) - 1 do
-      FDataArray[i+8] := Byte(ErrorCodeString[i]);
+      FDataArray[i + 8] := Byte(ErrorCodeString[i]);
+    {$ELSE}
+    for i := 1 to Length(ErrorCodeString) do
+      FDataArray[i + 7] := Byte(ErrorCodeString[i]);
     {$ENDIF}
-    FDataArray[8+Length(ErrorCodeString)] := Byte(#0);
+    FDataArray[8 + Length(ErrorCodeString)] := Byte(#0);
 
-    DataCount := 8+Length(ErrorCodeString)+1;
+    DataCount := 8 + Length(ErrorCodeString) + 1;   // 8 header bytes + null
   end;
   MTI := MTI_DATAGRAM;
 
 end;
 
-procedure TLccMessage.LoadConfigMemWriteArray(ASourceID: TNodeID;
+procedure TLccMessage.LoadConfigMemWrite(ASourceID: TNodeID;
   ASourceAlias: Word; ADestID: TNodeID; ADestAlias: Word; AddressSpace: Byte;
-  ConfigMemAddress: DWord; ArraySize: Integer; AnArray: array of Byte);
+  ConfigMemAddress: DWord; AnArray: array of Byte);
 var
-  i, iDatagram, DatagramCount, DatagramLength, iArrayPos: Integer;
+  i, WriteCount: Integer;
 begin
-  // Really should be a Get Address Space Info message here to make sure the start address is 0.....
+  WriteCount := Length(AnArray);
 
-  if ArraySize mod 64 = 0 then
-    DatagramCount := ArraySize div 64
-  else
-    DatagramCount := (ArraySize div 64) + 1;
+  Assert(WriteCount <= 64, 'TLccMessage.LoadConfigMemWrite must be less than 64 bytes');
 
-  for iDatagram := 0 to DatagramCount - 1 do
-  begin
-    DatagramLength := ArraySize;
-    if DatagramLength > 64 then
-      DatagramLength := 64;
-
-    ZeroFields;
-    SourceID := ASourceID;
-    DestID := ADestID;
-    CAN.SourceAlias := ASourceAlias;
-    CAN.DestAlias := ADestAlias;
-    FDataArray[0] := DATAGRAM_PROTOCOL_CONFIGURATION;
-    if AddressSpace < MSI_CONFIG then
-    begin
-      FDataArray[1] := MCP_WRITE;
-      FDataArray[2] := _Highest(ConfigMemAddress);
-      FDataArray[3] := _Higher(ConfigMemAddress);
-      FDataArray[4] := _Hi(ConfigMemAddress);
-      FDataArray[5] := _Lo(ConfigMemAddress);
-      FDataArray[6] := AddressSpace;
-      DataCount := 7;
-    end else
-    begin
-      case AddressSpace of
-        MSI_CDI : FDataArray[1] := MCP_WRITE or MCP_CDI;
-        MSI_ALL : FDataArray[1] := MCP_WRITE or MCP_ALL;
-        MSI_CONFIG : FDataArray[1] := MCP_WRITE or MCP_CONFIGURATION;
-      end;
-      FDataArray[2] := _Highest(ConfigMemAddress);
-      FDataArray[3] := _Higher(ConfigMemAddress);
-      FDataArray[4] := _Hi(ConfigMemAddress);
-      FDataArray[5] := _Lo(ConfigMemAddress);
-      DataCount := 6;
-    end;
-
-    iArrayPos := 0;
-    for i := 0 to DatagramLength - 1 do
-    begin
-      FDataArray[DataCount] := AnArray[iArrayPos];
-      Inc(FDataCount);
-      Inc(iArrayPos);
-      Inc(ConfigMemAddress);
-    end;
-
-    MTI := MTI_DATAGRAM;
-  end;
-end;
-
-procedure TLccMessage.LoadConfigMemWriteInteger(ASourceID: TNodeID;
-  ASourceAlias: Word; ADestID: TNodeID; ADestAlias: Word; AddressSpace: Byte;
-  ConfigMemAddress: DWord; IntegerSize: Byte; DataInteger: Integer);
-begin
-  // Really should be a Get Address Space Info message here to make sure the start address is 0.....
   ZeroFields;
   SourceID := ASourceID;
   DestID := ADestID;
   CAN.SourceAlias := ASourceAlias;
   CAN.DestAlias := ADestAlias;
   FDataArray[0] := DATAGRAM_PROTOCOL_CONFIGURATION;
+
   if AddressSpace < MSI_CONFIG then
   begin
     FDataArray[1] := MCP_WRITE;
@@ -3285,8 +3017,8 @@ begin
   end else
   begin
     case AddressSpace of
-      MSI_CDI : FDataArray[1] := MCP_WRITE or MCP_CDI;
-      MSI_ALL : FDataArray[1] := MCP_WRITE or MCP_ALL;
+      MSI_CDI    : FDataArray[1] := MCP_WRITE or MCP_CDI;
+      MSI_ALL    : FDataArray[1] := MCP_WRITE or MCP_ALL;
       MSI_CONFIG : FDataArray[1] := MCP_WRITE or MCP_CONFIGURATION;
     end;
     FDataArray[2] := _Highest(ConfigMemAddress);
@@ -3296,91 +3028,138 @@ begin
     DataCount := 6;
   end;
 
-  case IntegerSize of
-    1 : begin
-          FDataArray[DataCount] := _Lo(DataInteger);
-          Inc(FDataCount, 1);
-        end;
-    2 : begin
-          InsertWordAsDataBytes(Word( DataInteger), DataCount);
-          Inc(FDataCount, 2);
-        end;
-    4 : begin
-          InsertDWordAsDataBytes(DWord( DataInteger), DataCount);
-          Inc(FDataCount, 4);
-        end;
+  for i := 0 to WriteCount - 1 do
+    FDataArray[i + DataCount] := AnArray[i];
+
+  DataCount := DataCount + Length(AnArray);
+
+  MTI := MTI_DATAGRAM;
+end;
+
+procedure TLccMessage.LoadConfigMemWriteReply(ASourceID: TNodeID;
+  ASourceAlias: Word; ADestID: TNodeID; ADestAlias: Word; AddressSpace: Byte;
+  ConfigMemAddress: DWord);
+begin
+  ZeroFields;
+  SourceID := ASourceID;
+  DestID := ADestID;
+  CAN.SourceAlias := ASourceAlias;
+  CAN.DestAlias := ADestAlias;
+  FDataArray[0] := DATAGRAM_PROTOCOL_CONFIGURATION;
+
+  // Use the long version with the optional Byte 6 if the memory space is not one of the original 3 (CDI, All, Config)
+  if AddressSpace < MSI_CONFIG then
+  begin
+    FDataArray[1] := MCP_WRITE_REPLY;
+    FDataArray[2] := _Highest(ConfigMemAddress);
+    FDataArray[3] := _Higher(ConfigMemAddress);
+    FDataArray[4] := _Hi(ConfigMemAddress);
+    FDataArray[5] := _Lo(ConfigMemAddress);
+    FDataArray[6] := AddressSpace;
+    DataCount := 7;
+  end else
+  begin
+    case AddressSpace of
+      MSI_CDI    : FDataArray[1] := MCP_WRITE_REPLY_CDI;
+      MSI_ALL    : FDataArray[1] := MCP_WRITE_REPLY_ALL;
+      MSI_CONFIG : FDataArray[1] := MCP_READ_REPLY_CONFIG;
+    end;
+    FDataArray[2] := _Highest(ConfigMemAddress);
+    FDataArray[3] := _Higher(ConfigMemAddress);
+    FDataArray[4] := _Hi(ConfigMemAddress);
+    FDataArray[5] := _Lo(ConfigMemAddress);
+    DataCount := 6;
   end;
   MTI := MTI_DATAGRAM;
 end;
 
-procedure TLccMessage.LoadConfigMemWriteString(ASourceID: TNodeID;
+procedure TLccMessage.LoadConfigMemWriteReplyError(ASourceID: TNodeID;
   ASourceAlias: Word; ADestID: TNodeID; ADestAlias: Word; AddressSpace: Byte;
-  ConfigMemAddress: DWord; AString: String);
+  ConfigMemAddress: DWord; ErrorCode: Word; ErrorCodeString: string);
 var
-  i, iDatagram, DatagramCount, iStringPos, DatagramLength, StrLength: Integer;
+  i: Integer;
 begin
-  // Really should be a Get Address Space Info message here to make sure the start address is 0.....
+  ZeroFields;
+  SourceID := ASourceID;
+  DestID := ADestID;
+  CAN.SourceAlias := ASourceAlias;
+  CAN.DestAlias := ADestAlias;
+  FDataArray[0] := DATAGRAM_PROTOCOL_CONFIGURATION;
 
-  iStringPos := 1;         // 1 indexed
-
-  StrLength := Length(AString) + 1;  // Include the Null
-
-  if StrLength mod 64 = 0 then
-    DatagramCount := StrLength div 64
-  else
-    DatagramCount := (StrLength div 64) + 1;
-
-  for iDatagram := 0 to DatagramCount - 1 do
+  // Use the long version with the optional Byte 6 if the memory space is not one of the original 3 (CDI, All, Config)
+  if AddressSpace < MSI_CONFIG then
   begin
-    DatagramLength := StrLength - (iStringPos - 1);
-    if DatagramLength > 64 then
-      DatagramLength := 64;
+    FDataArray[1] := MCP_WRITE_REPLY_FAILURE;
+    FDataArray[2] := _Highest(ConfigMemAddress);
+    FDataArray[3] := _Higher(ConfigMemAddress);
+    FDataArray[4] := _Hi(ConfigMemAddress);
+    FDataArray[5] := _Lo(ConfigMemAddress);
+    FDataArray[6] := AddressSpace;
+    FDataArray[7] := Hi(ErrorCode);
+    FDataArray[8] := Lo(ErrorCode);
 
-    ZeroFields;
-    SourceID := ASourceID;
-    DestID := ADestID;
-    CAN.SourceAlias := ASourceAlias;
-    CAN.DestAlias := ADestAlias;
-    FDataArray[0] := DATAGRAM_PROTOCOL_CONFIGURATION;
-    if AddressSpace < MSI_CONFIG then
-    begin
-      FDataArray[1] := MCP_WRITE;
-      FDataArray[2] := _Highest(ConfigMemAddress);
-      FDataArray[3] := _Higher(ConfigMemAddress);
-      FDataArray[4] := _Hi(ConfigMemAddress);
-      FDataArray[5] := _Lo(ConfigMemAddress);
-      FDataArray[6] := AddressSpace;
-      DataCount := 7;
-    end else
-    begin
-      case AddressSpace of
-        MSI_CDI : FDataArray[1] := MCP_WRITE or MCP_CDI;
-        MSI_ALL : FDataArray[1] := MCP_WRITE or MCP_ALL;
-        MSI_CONFIG : FDataArray[1] := MCP_WRITE or MCP_CONFIGURATION;
-      end;
-      FDataArray[2] := _Highest(ConfigMemAddress);
-      FDataArray[3] := _Higher(ConfigMemAddress);
-      FDataArray[4] := _Hi(ConfigMemAddress);
-      FDataArray[5] := _Lo(ConfigMemAddress);
-      DataCount := 6;
-    end;
+    {$IFDEF LCC_MOBILE}
+    for i := 0 to Length(ErrorCodeString) - 1 do
+      FDataArray[i + 9] := Byte(ErrorCodeString[i]);
+    {$ELSE}
+    for i := 1 to Length(ErrorCodeString) do
+      FDataArray[i + 8] := Byte(ErrorCodeString[i]);
+    {$ENDIF}
+    FDataArray[9 + Length(ErrorCodeString)] := Byte(#0);
 
-    if DatagramLength = 1 then
-    begin
-      FDataArray[DataCount] := Ord(#0);
-      Inc(FDataCount);
-    end else
-    begin
-      for i := 0 to DatagramLength - 1 do
-      begin
-        FDataArray[DataCount] := Ord( AString[iStringPos]);
-        Inc(FDataCount);
-        Inc(iStringPos);
-        Inc(ConfigMemAddress);
-      end;
+    DataCount := 9 + Length(ErrorCodeString) + 1;   // 9 header bytes + null
+  end else
+  begin
+    case AddressSpace of
+      MSI_CDI    : FDataArray[1] := MCP_WRITE_REPLY_FAILURE_CDI;
+      MSI_ALL    : FDataArray[1] := MCP_WRITE_REPLY_FAILURE_ALL;
+      MSI_CONFIG : FDataArray[1] := MCP_WRITE_REPLY_FAILURE_CONFIG;
     end;
-    MTI := MTI_DATAGRAM;
+    FDataArray[2] := _Highest(ConfigMemAddress);
+    FDataArray[3] := _Higher(ConfigMemAddress);
+    FDataArray[4] := _Hi(ConfigMemAddress);
+    FDataArray[5] := _Lo(ConfigMemAddress);
+    FDataArray[6] := Hi(ErrorCode);
+    FDataArray[7] := Lo(ErrorCode);
+
+    {$IFDEF LCC_MOBILE}
+    for i := 0 to Length(ErrorCodeString) - 1 do
+      FDataArray[i + 8] := Byte(ErrorCodeString[i]);
+    {$ELSE}
+    for i := 1 to Length(ErrorCodeString) do
+      FDataArray[i + 7] := Byte(ErrorCodeString[i]);
+    {$ENDIF}
+    FDataArray[8 + Length(ErrorCodeString)] := Byte(#0);
+
+    DataCount := 8 + Length(ErrorCodeString) + 1;   // 8 header bytes + null
   end;
+  MTI := MTI_DATAGRAM;
+end;
+
+function TLccMessage.DecodeMemorySpace: Byte;
+begin
+  // Figure out where the Memory space to work on is located, encoded in the header or in the first databyte slot.
+  case DataArray[1] and $03 of
+    MCP_NONE          : Result := DataArray[6];
+    MCP_CDI           : Result := MSI_CDI;
+    MCP_ALL           : Result := MSI_ALL;
+    MCP_CONFIGURATION : Result := MSI_CONFIG
+  else
+    Result := 0;
+  end;
+end;
+
+
+{ TLccNodeCDI }
+
+function TLccNodeCDI.GetValid: Boolean;
+begin
+  Result := Implemented and (CDI <> '');
+end;
+
+procedure TLccNodeCDI.SetCDI(const Value: string);
+begin
+  FCDI := Value;
 end;
 
 initialization

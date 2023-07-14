@@ -22,10 +22,19 @@ uses
   SysUtils;
 
 const
+  ENGINE_ERROR_MEMORY_SPACE_UNSUPPORTED_PROTOCOL      = $0001;
+  ENGINE_ERROR_MEMORY_SPACE_UNSUPPORTED_MEMORYSPACE   = $0002;
+  ENGINE_ERROR_MEMORY_SPACE_READ_ERROR                = $0004;
+  ENGINE_ERROR_MEMORY_SPACE_WRITE_ERROR               = $0004;
+  ENGINE_ERROR_MEMORY_SPACE_WRITE_TO_READONLY_SPACE   = $0008;
+
+  ENGINE_ERROR_TRACTION_CONTROLLER_CONFIG_ASSIGN_REPLY_REFUSE_TRAIN = $0001;
+
+const
   TIMEOUT_RECIEVE_THREAD = 20;             // 20ms sleep time
   TIMEOUT_CONTROLLER_NOTIFY_WAIT = 2000;   // milliseconds   How long we wait for the Notified message to come from the currently assigned Controller
-  TIMEOUT_UNVALIDATED_MESSAGE_COUNT = 2000 div TIMEOUT_RECIEVE_THREAD;  // can Live 2 seconds before giving up
-  TIMEOUT_NODE_IDENTIFICTION_OBJECT_COUNT = TIMEOUT_UNVALIDATED_MESSAGE_COUNT * 2; // These need to live longer than the messages that created them
+///  TIMEOUT_UNVALIDATED_MESSAGE_COUNT = 2000 div TIMEOUT_RECIEVE_THREAD;  // can Live 2 seconds before giving up
+//  TIMEOUT_NODE_IDENTIFICTION_OBJECT_COUNT = TIMEOUT_UNVALIDATED_MESSAGE_COUNT * 2; // These need to live longer than the messages that created them
  // TIMEOUT_VERIFYNODE_SENDMESSAGE_WAIT = (TIMOUT_UNVALIDATEED_MESSAGE_WAIT div 2) + 10; // milliseconds.  How long we hold the TLccNodeIdentificationObject to send another VerifyNode message; NOTE this gets reset to 0 at TIMOUT_UNVALIDATEED_MESSAGE_WAIT div 2 for a second message send attempt
 
 const
@@ -49,10 +58,10 @@ const
     DWord = Cardinal;
     QWord = UInt64;
     {$IFDEF LCC_MOBILE}
-      AnsiChar = Char;
-      AnsiString = string;
-      PAnsiString = ^string;
-      PAnsiChar = ^Char;
+ //     AnsiChar = Char;
+ //     AnsiString = string;
+//      PAnsiString = ^string;
+ //     PAnsiChar = ^Char;
     {$ENDIF}
   {$ENDIF}
 
@@ -74,6 +83,7 @@ type
 
   TFunctionStatesArray = array[0..28] of Word;
   TLccDynamicByteArray = array of Byte;
+  PLccDynamicByteArray = ^TLccDynamicByteArray;
 
 type
   TDatagramArray = array[0..MAX_DATAGRAM_LENGTH-1] of Byte;
@@ -107,7 +117,6 @@ type
 type
   TLccCdiParserBase = class(TComponent)
   public
-    procedure SetNodeManager(ANodeManager: TObject); virtual; abstract;
     procedure DoConfigMemReadReply(ANode: TObject); virtual; abstract;
     procedure DoConfigMemWriteReply(ANode: TObject); virtual; abstract;
     procedure NotifyLccNodeDestroy(LccNode: TObject); virtual; abstract;
@@ -286,7 +295,7 @@ const
 
   MASK_SOURCE_ALIAS                  = $00000FFF;                                // Masks out just the Source Alias Address
 
-  // Byte 0
+  // Byte 3
   PIP_SIMPLENODE                     = $80;
   PIP_DATAGRAM                       = $40;
   PIP_STREAM                         = $20;
@@ -306,7 +315,7 @@ const
   PIP_FDI                            = $02;
 // PIP_DCC_COMMAND_STATION            = $01; depreciated
 
-  // Byte 3
+  // Byte 1
   PIP_SIMPLE_TRAIN_NODE_INFO         = $80;
   PIP_FUNCTION_CONFIGURATION         = $40;
   PIP_FIRMWARE_UPGRADE               = $20;
@@ -332,17 +341,18 @@ const
   STR_PIP_FIRMWARE_UPGRADE_ACTIVE    = 'Firmware Upgrade Active Protocol';
 
 const
-  MCP_WRITE                           = $00;                                    // MemoryConfigurationProtocol - Write Memory Mask
-  MCP_WRITE_STREAM                    = $20;
+  MCP_OPERATION                       = $80;                                    // MemoryConfigurationProtocol - Operation Mask
+  MCP_OPERATION_REPLY                 = $80;
+
+
   MCP_READ                            = $40;                                    // MemoryConfigurationProtocol - Read Memory Mask
   MCP_READ_CONFIGURATION              = $41;
   MCP_READ_ALL                        = $42;
   MCP_READ_CDI                        = $43;
 
   MCP_READ_STREAM                     = $60;
-  MCP_OPERATION                       = $80;                                    // MemoryConfigurationProtocol - Operation Mask
   MCP_READ_REPLY                      = $50;                                    // MemoryConfigurationProtocol - Read Reply Mask [Does not include the Address Space Mask "or" it with the the Address space masks below]
-  MCP_READ_REPLY_CONFIGURATION        = $51;
+  MCP_READ_REPLY_CONFIG               = $51;
   MCP_READ_REPLY_ALL                  = $52;
   MCP_READ_REPLY_CDI                  = $53;
   MCP_READ_REPLY_FAILURE              = $58;
@@ -350,7 +360,23 @@ const
   MCP_READ_REPLY_FAILURE_ALL          = $5A;
   MCP_READ_REPLY_FAILURE_CDI          = $5B;
 
-  MCP_WRITE_REPLY                     = $10;
+  MCP_WRITE                           = $00;                                    // MemoryConfigurationProtocol - Write Memory Mask
+  MCP_WRITE_CONFIGURATION             = $01;
+  MCP_WRITE_ALL                       = $02;
+  MCP_WRITE_CDI                       = $03;
+
+  MCP_WRITE_REPLY                     = $10;                                    // MemoryConfigurationProtocol - Read Reply Mask [Does not include the Address Space Mask "or" it with the the Address space masks below]
+  MCP_WRITE_REPLY_CONFIGURATION       = $11;
+  MCP_WRITE_REPLY_ALL                 = $12;
+  MCP_WRITE_REPLY_CDI                 = $13;
+  MCP_WRITE_REPLY_FAILURE             = $18;
+  MCP_WRITE_REPLY_FAILURE_CONFIG      = $19;
+  MCP_WRITE_REPLY_FAILURE_ALL         = $1A;
+  MCP_WRITE_REPLY_FAILURE_CDI         = $1B;
+
+
+  MCP_WRITE_STREAM                    = $20;
+
   MCP_READ_STREAM_REPLY               = $70;
 
   MCP_CDI                             = $03;                                    // Address space = CDI ($FF) access Mask
@@ -358,8 +384,8 @@ const
   MCP_CONFIGURATION                   = $01;                                    // Address space = Basic Configuration ($FD) access Mask
   MCP_NONE                            = $00;                                    // Use the optional {Space} byte in the datagram to defin the address space
 
-  MCP_OP_GET_CONFIG                  = $80;                                     // MemoryConfigurationProtocol Operation - Get Configuration
-  MCP_OP_GET_CONFIG_REPLY            = $82;                                     // MemoryConfigurationProtocol Operation - Get Configuration Reply
+  MCP_OP_GET_CONFIG_OPTIONS          = $80;                                     // MemoryConfigurationProtocol Operation - Get Configuration Options
+  MCP_OP_GET_CONFIG_OPTIONS_REPLY    = $82;                                     // MemoryConfigurationProtocol Operation - Get Configuration Reply
   MCP_OP_GET_ADD_SPACE_INFO          = $84;                                     // MemoryConfigurationProtocol Operation - Get Add Space Info
   MCP_OP_GET_ADD_SPACE_INFO_PRESENT_REPLY     = $87;
   MCP_OP_GET_ADD_SPACE_INFO_NOT_PRESENT_REPLY = $86;                            // MemoryConfigurationProtocol Operation - Get Add Space Info Reply
@@ -413,17 +439,16 @@ const
   TRACTION_CONTROLLER_CONFIG_ASSIGN          = $01;
   TRACTION_CONTROLLER_CONFIG_RELEASE         = $02;
   TRACTION_CONTROLLER_CONFIG_QUERY           = $03;
-  TRACTION_CONTROLLER_CONFIG_CHANGING_NOTIFY = $04;
   TRACTION_CONTROLLER_CONFIG_CHANGED_NOTIFY  = $04;
 
   TRACTION_CONTROLLER_CONFIG_REPLY_OK = $00;
-  TRACTION_CONTROLLER_CONFIG_ASSIGN_REPLY_REFUSE_ASSIGNED_CONTROLLER = $01;  // Bit 0
+//  TRACTION_CONTROLLER_CONFIG_ASSIGN_REPLY_REFUSE_ASSIGNED_CONTROLLER = $01;  // Bit 0     Depreciated... not a good idea
   TRACTION_CONTROLLER_CONFIG_ASSIGN_REPLY_REFUSE_TRAIN = $02; // Bit 1
 
-  TRACTION_LISTENER                   = $30;
-  TRACTION_LISTENER_ATTACH            = $01;
-  TRACTION_LISTENER_DETACH            = $02;
-  TRACTION_LISTENER_QUERY             = $03;
+  TRACTION_LISTENER_CONFIG            = $30;
+  TRACTION_LISTENER_CONFIG_ATTACH     = $01;
+  TRACTION_LISTENER_CONFIG_DETACH     = $02;
+  TRACTION_LISTENER_CONFIG_QUERY      = $03;
 
   TRACTION_LISTENER_FLAG_ALIAS_VALID  = $0001;   // Depreciated, Aliases are not portable across ethernet bridges.  Alias parameter no longer used
   TRACTION_LISTENER_FLAG_REVERSE_DIR  = $0002;   // Reverse Direction
@@ -439,9 +464,11 @@ const
   TRACTION_MANAGE_RESERVE             = $01;
   TRACTION_MANAGE_RELEASE             = $02;
   TRACTION_MANAGE_HEARTBEAT           = $03;
+  TRACTION_MANAGE_NOOP                = $03;
 
   TRACTION_MANAGE_RESERVE_REPLY_OK   = $00;    // Failed is not 0
   TRACTION_MANAGE_RESERVE_REPLY_FAIL = $01;
+  TRACTION_MANANGE_HEARTBEAT_REPLY   = $03;
 
 type
   TLccDccSpeedStep = (ldssDefault, ldss14, ldss28, ldss128);

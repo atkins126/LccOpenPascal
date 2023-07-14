@@ -1,7 +1,7 @@
 object FormTrainCommander: TFormTrainCommander
-  Left = 199
+  Left = 264
   Height = 565
-  Top = 141
+  Top = 183
   Width = 1241
   Align = alBottom
   Caption = 'Train Commander [LccOpenPascal]'
@@ -25,7 +25,7 @@ object FormTrainCommander: TFormTrainCommander
       Left = 192
       Height = 18
       Top = 8
-      Width = 156
+      Width = 160
       Caption = 'AutoConnect at Startup'
       TabOrder = 0
     end
@@ -51,7 +51,7 @@ object FormTrainCommander: TFormTrainCommander
       Left = 376
       Height = 18
       Top = 8
-      Width = 67
+      Width = 71
       Caption = 'Local IP'
       TabOrder = 3
     end
@@ -92,8 +92,8 @@ object FormTrainCommander: TFormTrainCommander
     object CheckBoxLogMessages: TCheckBox
       Left = 520
       Height = 18
-      Top = 70
-      Width = 104
+      Top = 41
+      Width = 108
       Caption = 'Log Messages'
       Checked = True
       State = cbChecked
@@ -119,28 +119,28 @@ object FormTrainCommander: TFormTrainCommander
       TabOrder = 6
     end
     object CheckBoxDetailedLog: TCheckBox
-      Left = 648
+      Left = 520
       Height = 18
-      Top = 72
-      Width = 94
+      Top = 70
+      Width = 98
       Caption = 'Detailed Log'
       ParentShowHint = False
       ShowHint = True
       TabOrder = 7
     end
     object ButtonWebserverConnect: TButton
-      Left = 720
+      Left = 672
       Height = 23
-      Top = 38
+      Top = 32
       Width = 152
       Caption = 'Webserver Connect'
       OnClick = ButtonWebserverConnectClick
       TabOrder = 8
     end
     object ButtonHTTPServer: TButton
-      Left = 720
+      Left = 672
       Height = 22
-      Top = 7
+      Top = 8
       Width = 147
       Caption = 'HTTP Connect'
       OnClick = ButtonHTTPServerClick
@@ -150,7 +150,7 @@ object FormTrainCommander: TFormTrainCommander
       Left = 896
       Height = 18
       Top = 11
-      Width = 175
+      Width = 179
       Caption = 'Allow Python Script To Run'
       Checked = True
       OnChange = CheckBox1Change
@@ -165,6 +165,53 @@ object FormTrainCommander: TFormTrainCommander
       Caption = 'Show Server Form'
       OnChange = ToggleBoxServerFormChange
       TabOrder = 11
+    end
+    object Button1: TButton
+      Left = 904
+      Height = 25
+      Top = 38
+      Width = 120
+      Caption = 'Create Trains'
+      OnClick = Button1Click
+      TabOrder = 12
+    end
+    object Edit1: TEdit
+      Left = 1032
+      Height = 22
+      Top = 41
+      Width = 80
+      TabOrder = 13
+      Text = '1'
+    end
+    object ButtonCreateConsist: TButton
+      Left = 904
+      Height = 25
+      Top = 65
+      Width = 208
+      Caption = 'Create a Consist from Selected'
+      OnClick = ButtonCreateConsistClick
+      TabOrder = 14
+    end
+    object SpeedButton1: TSpeedButton
+      Left = 1162
+      Height = 22
+      Top = 21
+      Width = 23
+      OnClick = SpeedButton1Click
+    end
+    object SpeedButton2: TSpeedButton
+      Left = 1202
+      Height = 22
+      Top = 25
+      Width = 23
+      OnClick = SpeedButton2Click
+    end
+    object SpeedButton3: TSpeedButton
+      Left = 1126
+      Height = 22
+      Top = 64
+      Width = 106
+      OnClick = SpeedButton3Click
     end
   end
   object PanelConnections: TPanel
@@ -269,7 +316,10 @@ object FormTrainCommander: TFormTrainCommander
       Width = 265
       Align = alClient
       Images = ImageListMain
+      MultiSelect = True
+      RowSelect = True
       TabOrder = 1
+      Options = [tvoAllowMultiselect, tvoAutoItemHeight, tvoHideSelection, tvoKeepCollapsedNodes, tvoRowSelect, tvoShowButtons, tvoShowLines, tvoShowRoot, tvoToolTips, tvoThemedDraw]
     end
   end
   object MemoLog: TMemo

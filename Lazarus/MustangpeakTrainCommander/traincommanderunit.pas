@@ -6,7 +6,7 @@ interface
 
 uses
   Classes, SysUtils, Forms, Controls, Graphics, Dialogs, ComCtrls, ExtCtrls,
-  StdCtrls,
+  StdCtrls, Spin, Buttons,
   lcc_ethernet_server,
   lcc_defines,
   lcc_node,
@@ -25,13 +25,21 @@ uses
   servervisualunit,
   lcc_alias_server,
   lcc_train_server,
-  lcc_xmlutilities;
+  lcc_xmlutilities,
+  lcc_utilities,
+  lcc_cdi_parser;
+
+
+const
+  IS_GRIDCONNECT = True;
 
 type
 
   { TFormTrainCommander }
 
   TFormTrainCommander = class(TForm)
+    Button1: TButton;
+    ButtonCreateConsist: TButton;
     ButtonHTTPServer: TButton;
     ButtonWebserverConnect: TButton;
     ButtonManualConnectComPort: TButton;
@@ -44,6 +52,7 @@ type
     CheckBoxLoopBackIP: TCheckBox;
     CheckBoxAutoConnect: TCheckBox;
     ComboBoxComPorts: TComboBox;
+    Edit1: TEdit;
     ImageListMain: TImageList;
     LabelNodeID: TLabel;
     LabelAliasID: TLabel;
@@ -56,12 +65,17 @@ type
     PanelTrains: TPanel;
     PanelConnections: TPanel;
     PanelDetails: TPanel;
+    SpeedButton1: TSpeedButton;
+    SpeedButton2: TSpeedButton;
+    SpeedButton3: TSpeedButton;
     SplitterConnections1: TSplitter;
     SplitterTrains: TSplitter;
     SplitterConnections: TSplitter;
     StatusBarMain: TStatusBar;
     ToggleBoxServerForm: TToggleBox;
     TreeViewTrains: TTreeView;
+    procedure Button1Click(Sender: TObject);
+    procedure ButtonCreateConsistClick(Sender: TObject);
     procedure ButtonHTTPServerClick(Sender: TObject);
     procedure ButtonWebserverConnectClick(Sender: TObject);
     procedure ButtonManualConnectComPortClick(Sender: TObject);
@@ -73,8 +87,12 @@ type
     procedure FormCreate(Sender: TObject);
     procedure FormDestroy(Sender: TObject);
     procedure FormShow(Sender: TObject);
+    procedure SpeedButton1Click(Sender: TObject);
+    procedure SpeedButton2Click(Sender: TObject);
+    procedure SpeedButton3Click(Sender: TObject);
     procedure ToggleBoxServerFormChange(Sender: TObject);
   private
+    FAutoCreateTrainAddress: Word;
     FCommandStationNode: TLccCommandStationNode;
     FComPort: TLccComPort;
  //   FLccHTTPServer: TLccHTTPServer;
@@ -100,6 +118,8 @@ type
     // Callbacks from the Ethernet Server
     procedure OnCommandStationServerConnectionState(Sender: TObject; Info: TLccHardwareConnectionInfo);
     procedure OnCommandStationServerErrorMessage(Sender: TObject; Info: TLccHardwareConnectionInfo);
+    procedure OnCommandStationServerSendMessage(Sender: TObject; LccMessage: TLccMessage);
+    procedure OnCommandStationServerReceiveMessage(Sender: TObject; LccMessage: TLccMessage);
     // Callbacks from the Websocket Server
     procedure OnCommandStationWebsocketConnectionState(Sender: TObject; Info: TLccHardwareConnectionInfo);
     procedure OnCommandStationWebsocketErrorMessage(Sender: TObject; Info: TLccHardwareConnectionInfo);
@@ -114,16 +134,14 @@ type
     procedure OnComPortSendMessage(Sender: TObject; var GridConnectStyleMessage: string);
 
     // Callbacks from the Node Manager
-    procedure OnNodeManagerSendMessage(Sender: TObject; LccMessage: TLccMessage);
-    procedure OnNodeManagerReceiveMessage(Sender: TObject; LccMessage: TLccMessage);
     procedure OnNodeManagerAliasIDChanged(Sender: TObject; LccSourceNode: TLccNode);
     procedure OnNodeManagerIDChanged(Sender: TObject; LccSourceNode: TLccNode);
-    procedure OnNodeManagerNodeLogout(Sender: TObject; LccSourceNode: TLccNode);
-    procedure OnNodeManagerNodeLogin(Sender: TObject; LccSourceNode: TLccNode);
+    procedure OnNodeManagerNodeLogin(Sender: TObject; LccSourceNode: TLccNode);  // Note there is not defined way for a node to log out of OpenLCB
+    procedure OnNodeManagerAliasRelease(Sender: TObject; ALccNode: TLccNode);
+    procedure OnNodeManagerNodeDestroy(Sender: TObject; ALccNode: TLccNode);
 
-
-    procedure OnNodeTractionListenerAttach(Sender: TObject; LccNode: TLccNode; AMessage: TLccMessage; var DoDefault: Boolean);
-    procedure OnNodeTractionListenerDetach(Sender: TObject; LccNode: TLccNode; AMessage: TLccMessage; var DoDefault: Boolean);
+    procedure OnNodeTractionListenerAttached(Sender: TObject; LccNode: TLccNode; AMessage: TLccMessage);
+    procedure OnNodeTractionListenerDetached(Sender: TObject; LccNode: TLccNode; AMessage: TLccMessage);
     procedure OnNodeTractionListenerQuery(Sender: TObject; LccNode: TLccNode; AMessage: TLccMessage; var DoDefault: Boolean);
 
     // Other
@@ -133,8 +151,9 @@ type
 
     function TrainNodeToCaption(ATrainNode: TLccTrainDccNode): string;
     function FindSingleLevelNodeWithData(ParentNode: TTreeNode; const NodeData: Pointer): TTreeNode;
-    procedure RebuildTrainListview;
+    procedure RebuildTrainTreeview;
     procedure ReleaseAliasOnTrains;
+    procedure NodeIsGoingAway(LccSourceNode: TLccNode);
 
   public
     property LccServer: TLccEthernetServer read FLccServer write FLccServer;
@@ -144,6 +163,8 @@ type
     property ComPort: TLccComPort read FComPort write FComPort;
 
     property CommandStationNode: TLccCommandStationNode read FCommandStationNode write FCommandStationNode;
+
+    property AutoCreateTrainAddress: Word read FAutoCreateTrainAddress write FAutoCreateTrainAddress;
   end;
 
 var
@@ -161,6 +182,29 @@ begin
  //   DisconnectHTTPServer
  // else
  //   ConnectHTTPServer;
+end;
+
+procedure TFormTrainCommander.Button1Click(Sender: TObject);
+var
+  i: Integer;
+  Train: TLccTrainDccNode;
+begin
+  for i := 0 to StrToInt(Edit1.Text) - 1 do
+  begin
+    Train := CommandStationNode.AddTrain( AutoCreateTrainAddress, True, ldssDefault);
+    Inc(FAutoCreateTrainAddress);
+    Train.Login(NULL_NODE_ID);
+  end;
+end;
+
+procedure TFormTrainCommander.ButtonCreateConsistClick(Sender: TObject);
+var
+  i: Integer;
+begin
+  for i := 0 to TreeViewTrains.SelectionCount - 1 do
+  begin
+
+  end;
 end;
 
 procedure TFormTrainCommander.ButtonWebserverConnectClick(Sender: TObject);
@@ -230,7 +274,7 @@ begin
     LocalInfo.AutoResolveIP := not CheckBoxLoopBackIP.Checked;
     LocalInfo.ListenerIP := '127.0.0.1';
     LocalInfo.ListenerPort := 12021;
-    LocalInfo.GridConnect := True;
+    LocalInfo.GridConnect := IS_GRIDCONNECT;
     LocalInfo.Hub := True;
     Result := LccServer.OpenConnection(LocalInfo) <> nil;
   finally
@@ -252,7 +296,7 @@ begin
     LocalInfo.AutoResolveIP := not CheckBoxLoopBackIP.Checked;
     LocalInfo.ListenerIP := '127.0.0.1';
     LocalInfo.ListenerPort := 12022;
-    LocalInfo.GridConnect := True;
+    LocalInfo.GridConnect := IS_GRIDCONNECT;
     LocalInfo.Hub := True;
   finally
     LocalInfo.Free;
@@ -296,7 +340,7 @@ begin
     LocalInfo.Baud := 9600;
     LocalInfo.StopBits := 8;
     LocalInfo.Parity := 'N';
-    LocalInfo.GridConnect := True;
+    LocalInfo.GridConnect := IS_GRIDCONNECT;
     Result := Assigned(ComPort.OpenConnection(LocalInfo))
   finally
     LocalInfo.Free;
@@ -319,20 +363,22 @@ end;
 
 procedure TFormTrainCommander.FormCreate(Sender: TObject);
 begin
-  NodeManager := TLccNodeManager.Create(nil, True);
+  NodeManager := TLccNodeManager.Create(nil, IS_GRIDCONNECT);
   NodeManager.OnNodeAliasIDChanged := @OnNodeManagerAliasIDChanged;
   NodeManager.OnNodeIDChanged := @OnNodeManagerIDChanged;
   NodeManager.OnNodeLogin := @OnNodeManagerNodeLogin;
-  NodeManager.OnNodeTractionListenerAttach := @OnNodeTractionListenerAttach;
-  NodeManager.OnNodeTractionListenerDetach := @OnNodeTractionListenerDetach;
+  NodeManager.OnNodeTractionListenerAttached := @OnNodeTractionListenerAttached;
+  NodeManager.OnNodeTractionListenerDetached := @OnNodeTractionListenerDetached;
   NodeManager.OnNodeTractionListenerQuery := @OnNodeTractionListenerQuery;
   NodeManager.OnAliasMappingChange := @OnAliasMappingChange;
+  NodeManager.OnAliasRelease := @OnNodeManagerAliasRelease;
+  NodeManager.OnNodeDestroy := @OnNodeManagerNodeDestroy;
 
   FLccServer := TLccEthernetServer.Create(nil, NodeManager);
   LccServer.OnConnectionStateChange := @OnCommandStationServerConnectionState;
   LccServer.OnErrorMessage := @OnCommandStationServerErrorMessage;
-  LccServer.OnLccMessageReceive := @OnNodeManagerReceiveMessage;
-  LccServer.OnLccMessageSend := @OnNodeManagerSendMessage;
+  LccServer.OnLccMessageReceive := @OnCommandStationServerReceiveMessage;
+  LccServer.OnLccMessageSend := @OnCommandStationServerSendMessage;
   LccServer.Hub := True;
 
 //  FLccWebsocketServer := TLccWebsocketServer.Create(nil, NodeManager);
@@ -351,6 +397,7 @@ begin
   ComPort.RawData := True;
 
   Max_Allowed_Buffers := 1;
+  AutoCreateTrainAddress := 1;
 
   FWorkerMessage := TLccMessage.Create;
 end;
@@ -373,6 +420,136 @@ begin
   ComboBoxComPorts.ItemIndex := 0;
 end;
 
+procedure TFormTrainCommander.SpeedButton1Click(Sender: TObject);
+var
+  AValue, Size, Result_: Integer;
+  Hex, Temp: string;
+  W: Word;
+  CharPtr: PChar;
+  B: Byte;
+  StartIndex, i: Integer;
+  MemoryStream: TMemoryStream;
+begin
+  AValue := 567;
+  Size := 2;
+
+
+  MemoryStream := TMemoryStream.Create;
+
+
+  MemoryStream.Clear;
+
+  Hex := IntToHex(AValue, Size * 2);
+
+  {$IFDEF LCC_MOBILE}
+  StartIndex := 0;
+  {$ELSE}
+  StartIndex := 1;
+  {$ENDIF}
+  CharPtr := @Hex[StartIndex];
+
+  for i := 0 to Size - 1 do
+  begin
+    Temp := '';
+    Temp := CharPtr^;
+    Inc(CharPtr);
+    Temp := Temp + CharPtr^;
+    Inc(CharPtr);
+    B := StrToInt('$' + Temp);
+    MemoryStream.Write(B, SizeOf(B));
+  end;
+
+  // Reset for use
+  MemoryStream.Position := 0;
+
+
+  // Undo
+  MemoryStream.Position := 0;
+
+  Temp := '';
+  for i := 0 to MemoryStream.Size - 1 do
+  begin
+    B := 0;
+    MemoryStream.Read(B, SizeOf(B));
+    Hex := IntToHex(B, 2);
+    Temp := Temp + Hex;
+  end;
+
+  if not TryStrToInt('$' + Temp, Result_) then
+    Result_ := 0;
+
+  // Reset for use
+  MemoryStream.Position := 0;
+
+
+  MemoryStream.Free;
+end;
+
+procedure TFormTrainCommander.SpeedButton2Click(Sender: TObject);
+var
+  EventIDStr, Temp, Hex: AnsiString;
+  StartIndex, i: Integer;
+  CharPtr: PAnsiChar;
+  B: Byte;
+  MemoryStream: TMemoryStream;
+  AValue, Result_: TEventID;
+begin
+  MemoryStream := TMemoryStream.Create;
+
+  AValue := EVENT_IS_TRAIN;
+
+  MemoryStream.Position := 0;
+
+  EventIDStr := EventIDToString(AValue, False);
+
+  {$IFDEF LCC_MOBILE}
+  StartIndex := 0;
+  {$ELSE}
+  StartIndex := 1;
+  {$ENDIF}
+  CharPtr := @EventIDStr[StartIndex];
+
+  // Implicit 8 Bytes
+  for i := 0 to 7 do
+  begin
+    Temp := '';
+    Temp := CharPtr^;
+    Inc(CharPtr);
+    Temp := Temp + CharPtr^;
+    Inc(CharPtr);
+    B := StrToInt('$' + Temp);
+    MemoryStream.Write(B, SizeOf(B));
+  end;
+
+  // Reset for use
+  MemoryStream.Position := 0;
+
+
+  // Read it back
+  MemoryStream.Position := 0;
+
+  Temp := '';
+  for i := 0 to MemoryStream.Size - 1 do
+  begin
+    B := 0;
+    MemoryStream.Read(B, SizeOf(B));
+    Hex := IntToHex(B, 2);
+    Temp := Temp + Hex;
+  end;
+
+  Result_ := StrToEventID(Temp);
+
+  // Reset for use
+  MemoryStream.Position := 0;
+
+  MemoryStream.Free;
+end;
+
+procedure TFormTrainCommander.SpeedButton3Click(Sender: TObject);
+begin
+  SpeedButton3.Caption := 'Datagram: ' + IntToStr(CommandStationNode.DatagramResendQueue.Count);
+end;
+
 procedure TFormTrainCommander.OnCommandStationServerConnectionState(Sender: TObject; Info: TLccHardwareConnectionInfo);
 var
   ListItem: TListItem;
@@ -390,7 +567,7 @@ begin
         ButtonEthernetConnect.Caption := 'Disconnect Ethernet';
         StatusBarMain.Panels[0].Text := 'Ethernet: Command Station Connected at: ' + (Info as TLccEthernetConnectionInfo).ListenerIP + ':' + IntToStr((Info as TLccEthernetConnectionInfo).ListenerPort);
         if NodeManager.Nodes.Count = 0 then
-          CommandStationNode := NodeManager.AddNodeByClass('', TLccCommandStationNode , True, NULL_NODE_ID) as TLccCommandStationNode;
+          CommandStationNode := NodeManager.AddNodeByClass('', TLccCommandStationNode, True, NULL_NODE_ID) as TLccCommandStationNode;
         if Assigned(CommandStationNode) then
         begin
           CommandStationNode.TractionServer.OnSpeedChange := @OnTractionNotify;
@@ -576,7 +753,7 @@ end;
 procedure TFormTrainCommander.OnNodeManagerIDChanged(Sender: TObject; LccSourceNode: TLccNode);
 begin
   if LccSourceNode is TLccCommandStationNode then
-    LabelNodeID.Caption := LccSourceNode.NodeIDStr;
+    LabelNodeID.Caption := LccSourceNode.NodeIDStr[True];
 end;
 
 procedure TFormTrainCommander.OnNodeManagerNodeLogin(Sender: TObject; LccSourceNode: TLccNode);
@@ -596,22 +773,32 @@ begin
   end;
 end;
 
-procedure TFormTrainCommander.OnNodeTractionListenerAttach(Sender: TObject;
-  LccNode: TLccNode; AMessage: TLccMessage; var DoDefault: Boolean);
+procedure TFormTrainCommander.OnNodeManagerAliasRelease(Sender: TObject; ALccNode: TLccNode);
 begin
-  RebuildTrainListview;
+  NodeIsGoingAway(ALccNode);
 end;
 
-procedure TFormTrainCommander.OnNodeTractionListenerDetach(Sender: TObject;
-  LccNode: TLccNode; AMessage: TLccMessage; var DoDefault: Boolean);
+procedure TFormTrainCommander.OnNodeManagerNodeDestroy(Sender: TObject; ALccNode: TLccNode);
 begin
-  RebuildTrainListview ;
+  NodeIsGoingAway(ALccNode);
+end;
+
+procedure TFormTrainCommander.OnNodeTractionListenerAttached(Sender: TObject;
+  LccNode: TLccNode; AMessage: TLccMessage);
+begin
+  RebuildTrainTreeview;
+end;
+
+procedure TFormTrainCommander.OnNodeTractionListenerDetached(Sender: TObject;
+  LccNode: TLccNode; AMessage: TLccMessage);
+begin
+  RebuildTrainTreeview;
 end;
 
 procedure TFormTrainCommander.OnNodeTractionListenerQuery(Sender: TObject;
   LccNode: TLccNode; AMessage: TLccMessage; var DoDefault: Boolean);
 begin
-
+  RebuildTrainTreeview;
 end;
 
 procedure TFormTrainCommander.OnAliasMappingChange(Sender: TObject; LccSourceNode: TLccNode; AnAliasMapping: TLccAliasMapping; IsMapped: Boolean);
@@ -649,9 +836,9 @@ begin
   end;
 
   if ATrainNode.DccLongAddress then
-    Result := IntToStr(ATrainNode.DccAddress) + ' Long ' + SpeedStep + ' [' + ATrainNode.AliasIDStr + ']' + ' [' + ATrainNode.NodeIDStr + ']'
+    Result := IntToStr(ATrainNode.DccAddress) + ' Long ' + SpeedStep + ' [Listeners: ' + IntToStr(ATrainNode.Listeners.Count) + '] [' + ATrainNode.AliasIDStr + ']' + ' [' + ATrainNode.NodeIDStr[True] + ']'
   else
-    Result := IntToStr(ATrainNode.DccAddress) + ' Short ' + SpeedStep + ' [' + ATrainNode.AliasIDStr + ']' + ' [' + ATrainNode.NodeIDStr + ']';
+    Result := IntToStr(ATrainNode.DccAddress) + ' Short ' + SpeedStep + ' [Listeners: ' + IntToStr(ATrainNode.Listeners.Count) + '] [' + ATrainNode.AliasIDStr + ']' + ' [' + ATrainNode.NodeIDStr[True] + ']';
 end;
 
 function TFormTrainCommander.FindSingleLevelNodeWithData(ParentNode: TTreeNode;
@@ -665,7 +852,7 @@ begin
     Result := Result.GetNextSibling;
 end;
 
-procedure TFormTrainCommander.RebuildTrainListview;
+procedure TFormTrainCommander.RebuildTrainTreeview;
 var
   ListenerTrainNode, ParentTrainNode: TLccTrainDccNode;
   ParentTreeNode, ChildTreeNode: TTreeNode;
@@ -708,6 +895,30 @@ begin
     begin
       TrainNode := TLccNode(NodeManager.Nodes.Items[i]) as TLccTrainDccNode;
       TrainNode.ReleaseAlias(100);
+    end;
+  end;
+end;
+
+procedure TFormTrainCommander.NodeIsGoingAway(LccSourceNode: TLccNode);
+var
+ TreeNode: TTreeNode;
+ TrainNode: TLccTrainDccNode;
+begin
+  if Assigned(LccSourceNode) then
+  begin
+    if LccSourceNode is TLccTrainDccNode then
+    begin
+      TrainNode := LccSourceNode as TLccTrainDccNode;
+      TreeNode := TreeViewTrains.Items.FindNodeWithData(TrainNode);
+      while Assigned(TreeNode) do
+      begin
+        if Assigned(TreeNode) then
+        begin
+          TreeViewTrains.Items.Delete(TreeNode);
+          Break;
+        end;
+        TreeNode := TreeViewTrains.Items.FindNodeWithData(LccSourceNode);
+      end;
     end;
   end;
 end;
@@ -763,34 +974,27 @@ begin
   end;
 end;
 
-procedure TFormTrainCommander.OnNodeManagerNodeLogout(Sender: TObject; LccSourceNode: TLccNode);
-{var
-  TreeNode: TTreeNode;
-  TrainNode: TLccTrainDccNode;      }
-begin
-{  if LccSourceNode is TLccTrainDccNode then
-  begin
-    TrainNode := LccSourceNode as TLccTrainDccNode;
-    TreeNode := TreeViewTrains.Items.FindNodeWithData(TrainNode);
-    while Assigned(TreeNode) do
-    begin
-      if Assigned(TreeNode) then
-        TreeViewTrains.Items.Delete(TreeNode);
-      TreeNode := TreeViewTrains.Items.FindNodeWithData(LccSourceNode);
-    end;
-  end;     }
-end;
-
-procedure TFormTrainCommander.OnNodeManagerReceiveMessage(Sender: TObject; LccMessage: TLccMessage);
+procedure TFormTrainCommander.OnCommandStationServerReceiveMessage(Sender: TObject; LccMessage: TLccMessage);
+var
+  ByteArray: TLccDynamicByteArray;
 begin
   if CheckBoxLogMessages.Checked then
   begin
+    ByteArray := nil;
     MemoLog.Lines.BeginUpdate;
     try
-      if CheckBoxDetailedLog.Checked then
-        MemoLog.Lines.Add('R: ' + MessageToDetailedMessage(LccMessage))
-      else
-        MemoLog.Lines.Add('R: ' + LccMessage.ConvertToGridConnectStr('', False));
+      if IS_GRIDCONNECT then
+      begin
+        if CheckBoxDetailedLog.Checked then
+          MemoLog.Lines.Add('R: ' + MessageToDetailedMessage(LccMessage))
+        else
+          MemoLog.Lines.Add('R: ' + LccMessage.ConvertToGridConnectStr('', False));
+      end else
+      begin
+        LccMessage.ConvertToLccTcp(ByteArray);
+        MemoLog.Lines.Add('R: ' + LccMessage.ConvertToLccTcpString(ByteArray));
+      end;
+
       MemoLog.SelStart := Length(MemoLog.Lines.Text);
     finally
       MemoLog.Lines.EndUpdate;
@@ -798,16 +1002,26 @@ begin
   end;
 end;
 
-procedure TFormTrainCommander.OnNodeManagerSendMessage(Sender: TObject; LccMessage: TLccMessage);
+procedure TFormTrainCommander.OnCommandStationServerSendMessage(Sender: TObject; LccMessage: TLccMessage);
+var
+  ByteArray: TLccDynamicByteArray;
 begin
   if CheckBoxLogMessages.Checked then
   begin
+    ByteArray := nil;
     MemoLog.Lines.BeginUpdate;
     try
-      if CheckBoxDetailedLog.Checked then
-        MemoLog.Lines.Add('S: ' + MessageToDetailedMessage(LccMessage))
-      else
-        MemoLog.Lines.Add('S: ' + LccMessage.ConvertToGridConnectStr('', False));
+      if IS_GRIDCONNECT then
+      begin
+        if CheckBoxDetailedLog.Checked then
+          MemoLog.Lines.Add('S: ' + MessageToDetailedMessage(LccMessage))
+        else
+          MemoLog.Lines.Add('S: ' + LccMessage.ConvertToGridConnectStr('', False));
+      end else
+      begin
+        LccMessage.ConvertToLccTcp(ByteArray);
+        MemoLog.Lines.Add('S: ' + LccMessage.ConvertToLccTcpString(ByteArray));
+      end;
       MemoLog.SelStart := Length(MemoLog.Lines.Text);
     finally
       MemoLog.Lines.EndUpdate;

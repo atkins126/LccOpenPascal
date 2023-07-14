@@ -1,0 +1,78 @@
+object Form1: TForm1
+  Left = 628
+  Height = 665
+  Top = 175
+  Width = 783
+  Caption = 'Form1'
+  ClientHeight = 665
+  ClientWidth = 783
+  OnCreate = FormCreate
+  LCLVersion = '2.2.4.0'
+  object Panel1: TPanel
+    Left = 0
+    Height = 50
+    Top = 0
+    Width = 783
+    Align = alTop
+    ClientHeight = 50
+    ClientWidth = 783
+    TabOrder = 0
+    object Button1: TButton
+      Left = 40
+      Height = 25
+      Top = 16
+      Width = 139
+      Caption = 'Open CDI'
+      OnClick = Button1Click
+      TabOrder = 0
+    end
+    object Label4: TLabel
+      Left = 300
+      Height = 16
+      Top = 19
+      Width = 41
+      Caption = 'Label4'
+      ParentColor = False
+    end
+    object Button2: TButton
+      Left = 426
+      Height = 25
+      Top = 17
+      Width = 75
+      Caption = 'Button2'
+      OnClick = Button2Click
+      TabOrder = 1
+    end
+  end
+  object Panel2: TPanel
+    Left = 0
+    Height = 489
+    Top = 176
+    Width = 783
+    Align = alClient
+    ParentColor = False
+    TabOrder = 1
+  end
+  object Panel3: TPanel
+    Left = 0
+    Height = 121
+    Top = 50
+    Width = 783
+    Align = alTop
+    TabOrder = 2
+  end
+  object Splitter1: TSplitter
+    Cursor = crVSplit
+    Left = 0
+    Height = 5
+    Top = 171
+    Width = 783
+    Align = alTop
+    ResizeAnchor = akTop
+  end
+  object OpenDialog1: TOpenDialog
+    DefaultExt = '.xml'
+    Left = 208
+    Top = 8
+  end
+end

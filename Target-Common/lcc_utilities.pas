@@ -37,12 +37,12 @@ uses
   function EqualEventID(EventID1, EventID2: TEventID): Boolean;
   procedure NodeIDToEventID(NodeID: TNodeID; LowBytes: Word; var EventID: TEventID);
   function NullNodeID(ANodeID: TNodeID): Boolean;
-  procedure StringToNullArray(AString: String; var ANullArray: TLccDynamicByteArray; var iIndex: Integer);
   function EventIDToString(EventID: TEventID; InsertDots: Boolean): String;
   function NodeIDToString(NodeID: TNodeID; InsertDots: Boolean): String;
   function NodeAliasToString(AliasID: Word): String;
   function ValidateIPString(IP4: string): Boolean;
   function ValidateNodeIDString(NodeIDStr: string): Boolean;
+  function ValidateEventIDString(NodeIDStr: string): Boolean;
   function ValidatePort(PortStr: string): Boolean; overload;
   function ValidatePort(Port: Integer): Boolean; overload;
   procedure NodeIDStringToNodeID(ANodeIDStr: String; var ANodeID: TNodeID);
@@ -304,21 +304,7 @@ begin
 
 end;
 
-function ValidatePort(PortStr: string): Boolean;
-var
-  Port: Integer;
-begin
-  Result := False;
-  if TryStrToInt(PortStr, Port) then
-    Result := ValidatePort(Port);
-end;
-
-function ValidatePort(Port: Integer): Boolean;
-begin
-  Result := Port < 65535
-end;
-
-function ValidateNodeIDString(NodeIDStr: string): Boolean;
+function ValidateEventIDString(NodeIDStr: string): Boolean;
 var
   Octet : string;
   Dots, I : Integer;
@@ -340,14 +326,66 @@ begin
       begin
         Inc(Dots);
         if (length(Octet) = 1) or (StrToInt('$' + Octet) > 255) then
-          Dots := 7; //Either there's no number or it's higher than 255 so push dots out of range
+          Dots := 9; //Either there's no number or it's higher than 255 so push dots out of range to fail below
         Octet := '0'; // Reset to check the next octet
-      end else// End of IP4[I] is a dot   // Else IP4[I] is not a dot so
+      end else// End is a dot   // Else is not a dot so
         Octet := Octet + NodeIDStr[I]; // Add the next character to the octet
-    end else // End of IP4[I] is not a dot   // Else IP4[I] Is not in CheckSet so
-      Dots := 7; // Push dots out of range
+    end else // End is not a dot   // Else Is not in CheckSet so
+      Dots := 9; // Push dots out of range to fail below
   end;
-  Result := (Dots = 6) // The only way that Dots will equal 4 is if we passed all the tests
+  Result := (Dots = 8) // The only way that Dots will equal 8 is if we passed all the tests
+end;
+
+function ValidatePort(PortStr: string): Boolean;
+var
+  Port: Integer;
+begin
+  Result := False;
+  if TryStrToInt(PortStr, Port) then
+    Result := ValidatePort(Port);
+end;
+
+function ValidatePort(Port: Integer): Boolean;
+begin
+  Result := Port < 65535
+end;
+
+function ValidateNodeIDString(NodeIDStr: string): Boolean;
+var
+  Octet : string;
+  Dots, I : Integer;
+begin
+  NodeIDStr := UpperCase(NodeIDStr);
+  if (NodeIDStr[1] = '0') and (NodeIDStr[2] = 'X') then
+  begin
+    for i := 1 to Length(NodeIDStr) - 2 do
+      NodeIDStr[i] := NodeIDStr[i+2];
+    SetLength(NodeIDStr, Length(NodeIDStr) - 2);
+  end;
+
+  NodeIDStr := NodeIDStr + '.'; //add a dot. We use a dot to trigger the Octet check, so need the last one
+  Dots := 0;
+  Octet := '0';
+  {$IFDEF LCC_MOBILE}
+  For I := 0 To Length(NodeIDStr) - 1 Do
+  {$ELSE}
+  for I := 1 To Length(NodeIDStr) do
+  {$ENDIF}
+  begin
+    if CharInSet(NodeIDStr[I], ['0'..'9', 'A'..'F', '.']) then
+    begin
+      if NodeIDStr[I] = '.' then //found a dot so inc dots and check octet value
+      begin
+        Inc(Dots);
+        if (length(Octet) = 1) or (StrToInt('$' + Octet) > 255) then
+          Dots := 7; //Either there's no number or it's higher than 255 so push dots out of range to fail below
+        Octet := '0'; // Reset to check the next octet
+      end else// End is a dot   // Else is not a dot so
+        Octet := Octet + NodeIDStr[I]; // Add the next character to the octet
+    end else // End is not a dot   // Else Is not in CheckSet so
+      Dots := 7; // Push dots out of range to fail below
+  end;
+  Result := (Dots = 6) // The only way that Dots will equal 6 is if we passed all the tests
 end;
 
 function ValidateIPString(IP4: string): Boolean; // Coding by Dave Sonsalla
@@ -422,27 +460,6 @@ begin
   EventID[5] := _Lo(     NodeID[0]);
   EventID[6] := _Hi(LowBytes);
   EventID[7] := _Lo(LowBytes);
-end;
-
-procedure StringToNullArray(AString: String; var ANullArray: TLccDynamicByteArray; var iIndex: Integer);
-var
-  Len, i: Integer;
-begin
-  Len := Length(AString);
-  if Len > 0 then
-  begin
-    {$IFDEF FPC}
-      for i := 1 to Len do
-    {$ELSE}
-      {$IFDEF LCC_MOBILE}for i := 0 to Len - 1 do{$ELSE}for i := 1 to Len do{$ENDIF}
-    {$ENDIF}
-    begin
-      ANullArray[iIndex] := Ord( AString[i]);
-      Inc(iIndex);
-    end;
-  end;
-  ANullArray[iIndex] := 0;
-  Inc(iIndex);
 end;
 
 function NullNodeID(ANodeID: TNodeID): Boolean;
@@ -758,7 +775,7 @@ function StreamReadByte(AStream: TStream): Byte;
 begin
   Result := 0;
   AStream.Read(Result, 1);
-  end;
+end;
 
 procedure StreamWriteByte(AStream: TStream; AByte: Byte);
 begin
@@ -1025,10 +1042,10 @@ begin
 end;
 
   {$IFNDEF LCC_MOBILE}
-    function GridConnectToJMRI(GridStr: AnsiString): AnsiString;
+    function GridConnectToJMRI(GridStr: string): string;
     var
       NPos: integer;
-      Header: PAnsiChar;
+      Header: PChar;
       i: Integer;
     begin
       Result := GridStr;
@@ -1049,7 +1066,7 @@ end;
         Result := Result + Header^ + ' ';
         Inc(Header);
       end;
-      Result := AnsiString( Trim(string( Result)));
+      Result := Trim(string( Result));
       for i := 0 to (40 - Length(Result)) do
         Result := Result + ' ';  // Pad them all to the same length
     end;
